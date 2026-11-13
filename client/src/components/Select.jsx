@@ -2,7 +2,7 @@ export default function Select({ label, name, value, onChange, options, required
   return (
     <div>
       {label && (
-        <label htmlFor={name} className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor={name} className="ui-field-label">
           {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
@@ -13,7 +13,7 @@ export default function Select({ label, name, value, onChange, options, required
         value={value}
         onChange={onChange}
         required={required}
-        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+        className={`ui-select ${
           error ? 'border-red-500' : 'border-gray-300'
         }`}
         {...props}

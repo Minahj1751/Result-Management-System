@@ -2,7 +2,7 @@ export default function Input({ label, type = 'text', name, value, onChange, pla
   return (
     <div>
       {label && (
-        <label htmlFor={name} className="block text-sm font-medium text-gray-700 mb-2">
+        <label htmlFor={name} className="ui-field-label">
           {label}
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
@@ -15,7 +15,7 @@ export default function Input({ label, type = 'text', name, value, onChange, pla
         onChange={onChange}
         placeholder={placeholder}
         required={required}
-        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+        className={`ui-input ${
           error ? 'border-red-500' : 'border-gray-300'
         }`}
         {...props}

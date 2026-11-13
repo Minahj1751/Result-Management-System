@@ -58,13 +58,13 @@ export default function AdminDashboard() {
   if (loading) return <div className="text-center py-8">Loading...</div>;
 
   const statCards = [
-    { label: 'Total Students', value: stats.totalStudents, color: 'text-blue-600' },
-    { label: 'Total Teachers', value: stats.totalTeachers, color: 'text-green-600' },
-    { label: 'Total Classes', value: stats.totalClasses, color: 'text-purple-600' },
-    { label: 'Total Subjects', value: stats.totalSubjects, color: 'text-orange-600' },
-    { label: 'Sessions', value: stats.totalSessions, color: 'text-indigo-600' },
-    { label: 'Semesters (active)', value: stats.totalSemesters, color: 'text-teal-600' },
-    { label: 'Assessments', value: stats.totalAssessments, color: 'text-pink-600' },
+    { label: 'Total Students', value: stats.totalStudents, color: 'text-blue-600', accent: 'accent-blue' },
+    { label: 'Total Teachers', value: stats.totalTeachers, color: 'text-green-600', accent: 'accent-green' },
+    { label: 'Total Classes', value: stats.totalClasses, color: 'text-purple-600', accent: 'accent-purple' },
+    { label: 'Total Subjects', value: stats.totalSubjects, color: 'text-orange-600', accent: 'accent-orange' },
+    { label: 'Sessions', value: stats.totalSessions, color: 'text-indigo-600', accent: 'accent-indigo' },
+    { label: 'Semesters (active)', value: stats.totalSemesters, color: 'text-teal-600', accent: 'accent-teal' },
+    { label: 'Assessments', value: stats.totalAssessments, color: 'text-pink-600', accent: 'accent-pink' },
   ];
 
   const quickActions = [
@@ -79,11 +79,15 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Dashboard</h1>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-8">
+    <div className="dashboard-page">
+      <header className="dashboard-header">
+        <p className="dashboard-eyebrow">School overview</p>
+        <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
+        <p className="mt-2 text-sm text-gray-500">A quick look at the people and learning activity across your school.</p>
+      </header>
+      <div className="stat-grid gap-4 mb-8">
         {statCards.map((s) => (
-          <Card key={s.label} className="text-center !p-4">
+          <Card key={s.label} className={`stat-card text-center !p-4 ${s.accent}`}>
             <p className="text-xs text-gray-500">{s.label}</p>
             <p className={`text-2xl font-bold mt-1 ${s.color}`}>{s.value}</p>
           </Card>
@@ -95,7 +99,7 @@ export default function AdminDashboard() {
             <Link
               key={a.to}
               to={a.to}
-              className="p-4 border border-gray-200 rounded-md hover:bg-gray-50 text-sm text-center transition-colors"
+              className="quick-action p-4 text-sm text-center"
             >
               {a.label}
             </Link>

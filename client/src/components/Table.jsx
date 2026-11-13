@@ -1,39 +1,39 @@
 export default function Table({ columns, data, actions, emptyMessage = 'No data available' }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+    <div className="ui-table-wrap">
+      <table className="ui-table">
+        <thead>
           <tr>
             {columns.map((column) => (
               <th
                 key={column.key}
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="text-left"
               >
                 {column.label}
               </th>
             ))}
-            {actions && <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+            {actions && <th className="text-right">
               Actions
             </th>}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody>
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length + (actions ? 1 : 0)} className="px-6 py-4 text-center text-gray-500">
+              <td colSpan={columns.length + (actions ? 1 : 0)} className="text-center">
                 {emptyMessage}
               </td>
             </tr>
           ) : (
             data.map((row, rowIndex) => (
-              <tr key={rowIndex} className="hover:bg-gray-50">
+              <tr key={rowIndex}>
                 {columns.map((column) => (
-                  <td key={column.key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td key={column.key}>
                     {column.render ? column.render(row[column.key], row) : row[column.key]}
                   </td>
                 ))}
                 {actions && (
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="text-right font-medium">
                     {actions(row)}
                   </td>
                 )}

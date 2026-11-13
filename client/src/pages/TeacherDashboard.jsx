@@ -50,24 +50,28 @@ export default function TeacherDashboard() {
     }
   };
 
-  if (loading) return <div className="text-center py-8">Loading...</div>;
+  if (loading) return <div className="loading-state"><span className="loading-spinner" />Loading your dashboard…</div>;
 
   const label = (a) =>
     `${a.subject?.name || ''} — ${a.schoolClass?.name || ''} ${a.section?.name || ''} (${a.semester?.name || ''}, ${a.academicSession?.name || ''})`;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Teacher Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <Card className="text-center !p-4">
+    <div className="dashboard-page">
+      <header className="dashboard-header">
+        <p className="dashboard-eyebrow">Your teaching workspace</p>
+        <h1 className="text-2xl font-bold text-gray-900">Teacher Dashboard</h1>
+        <p className="mt-2 text-sm text-gray-500">Your assignments and assessment progress, all together.</p>
+      </header>
+      <div className="stat-grid gap-5 mb-6">
+        <Card className="stat-card accent-blue text-center !p-4">
           <p className="text-sm text-gray-500">Subject Assignments</p>
           <p className="text-3xl font-bold text-blue-600 mt-1">{assignments.length}</p>
         </Card>
-        <Card className="text-center !p-4">
+        <Card className="stat-card accent-green text-center !p-4">
           <p className="text-sm text-gray-500">Class Teacher Of</p>
           <p className="text-3xl font-bold text-green-600 mt-1">{classAssignments.length}</p>
         </Card>
-        <Card className="text-center !p-4">
+        <Card className="stat-card accent-orange text-center !p-4">
           <p className="text-sm text-gray-500">Assessments Pending</p>
           <p className="text-3xl font-bold text-orange-600 mt-1">{pendingCount ?? '-'}</p>
         </Card>

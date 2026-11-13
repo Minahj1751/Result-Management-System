@@ -51,11 +51,15 @@ export default function ClassTeacherDashboard() {
     }
   };
 
-  if (loading) return <div className="text-center py-8">Loading...</div>;
+  if (loading) return <div className="loading-state"><span className="loading-spinner" />Loading your dashboard…</div>;
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Class Teacher Dashboard</h1>
+    <div className="dashboard-page">
+      <header className="dashboard-header">
+        <p className="dashboard-eyebrow">Your classroom workspace</p>
+        <h1 className="text-2xl font-bold text-gray-900">Class Teacher Dashboard</h1>
+        <p className="mt-2 text-sm text-gray-500">A friendly overview of your class and its attendance.</p>
+      </header>
 
       {assignments.length === 0 ? (
         <Card>
@@ -63,18 +67,18 @@ export default function ClassTeacherDashboard() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <Card className="text-center !p-4">
+          <div className="stat-grid gap-5 mb-6">
+            <Card className="stat-card accent-blue text-center !p-4">
               <p className="text-sm text-gray-500">Assigned Class</p>
               <p className="text-xl font-bold text-blue-600 mt-1">
                 {assignments[0].schoolClass?.name} — {assignments[0].section?.name}
               </p>
             </Card>
-            <Card className="text-center !p-4">
+            <Card className="stat-card accent-green text-center !p-4">
               <p className="text-sm text-gray-500">Students</p>
               <p className="text-3xl font-bold text-green-600 mt-1">{stats.students}</p>
             </Card>
-            <Card className="text-center !p-4">
+            <Card className="stat-card accent-purple text-center !p-4">
               <p className="text-sm text-gray-500">Avg Attendance</p>
               <p className="text-3xl font-bold text-purple-600 mt-1">
                 {stats.avgAttendance !== null ? `${stats.avgAttendance.toFixed(1)}%` : '-'}
