@@ -96,11 +96,15 @@ const generateStudentMarksheet = async (req, res, next) => {
  */
 const generateClassMarksheets = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, studentIds } = req.query;
 
     if (!academicSessionId || !semesterId || !schoolClassId || !sectionId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
+
+    const selectedIds = studentIds
+      ? String(studentIds).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
 
     // Get all enrolled students
     const enrollments = await prisma.studentEnrollment.findMany({
@@ -110,6 +114,7 @@ const generateClassMarksheets = async (req, res, next) => {
         schoolClassId,
         sectionId,
         isActive: true,
+        ...(selectedIds && { studentId: { in: selectedIds } }),
       },
       include: {
         student: true,

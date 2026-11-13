@@ -10,6 +10,7 @@ const { idParamValidation } = require('../validators/academicValidator');
 router.get('/', authenticate, studentController.getStudents);
 router.post('/', authenticate, isAdmin, createStudentValidation, validate, studentController.createStudent);
 router.get('/:id', authenticate, idParamValidation, validate, studentController.getStudentById);
+router.patch('/bulk-status', authenticate, isAdmin, studentController.bulkUpdateStudentStatus);
 router.patch('/:id', authenticate, isAdmin, idParamValidation, validate, studentController.updateStudent);
 
 // Enrollments

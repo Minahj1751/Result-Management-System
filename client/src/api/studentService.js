@@ -17,6 +17,10 @@ export const studentAPI = {
     const response = await api.patch(`/students/${id}`, data);
     return response.data;
   },
+  bulkUpdateStatus: async (ids, isActive) => {
+    const response = await api.patch('/students/bulk-status', { ids, isActive });
+    return response.data;
+  },
   createEnrollment: async (data) => {
     const response = await api.post('/students/enrollments', data);
     return response.data;

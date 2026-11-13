@@ -23,6 +23,7 @@ export const pdfAPI = {
     const response = await api.get('/pdf/class', {
       params,
       responseType: 'blob',
+      timeout: 120000,
     });
     downloadBlob(response.data, filename || 'marksheets.zip');
   },

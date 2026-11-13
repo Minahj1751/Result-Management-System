@@ -152,6 +152,31 @@ const updateStudent = async (req, res, next) => {
 };
 
 /**
+ * Bulk activate/deactivate students
+ */
+const bulkUpdateStudentStatus = async (req, res, next) => {
+  try {
+    const { ids, isActive } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ error: 'isActive must be a boolean' });
+    }
+
+    const result = await prisma.student.updateMany({
+      where: { id: { in: ids } },
+      data: { isActive },
+    });
+
+    res.json({ updated: result.count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Create student enrollment
  */
 const createEnrollment = async (req, res, next) => {
@@ -236,6 +261,7 @@ module.exports = {
   createStudent,
   getStudentById,
   updateStudent,
+  bulkUpdateStudentStatus,
   createEnrollment,
   updateEnrollment,
   deleteEnrollment,

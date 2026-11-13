@@ -32,13 +32,15 @@ export default function TeacherDashboard() {
       // Pending marks: assessments matching my assignments that aren't fully entered
       if (subjectAssignments.length > 0) {
         const first = subjectAssignments[0];
-        const assessments = await assessmentAPI.getAssessments({
+        const assessmentsRes = await assessmentAPI.getAssessments({
           academicSessionId: first.academicSessionId,
           semesterId: first.semesterId,
           schoolClassId: first.schoolClassId,
           sectionId: first.sectionId,
           subjectId: first.subjectId,
+          limit: 100,
         });
+        const assessments = assessmentsRes.assessments || assessmentsRes;
         const entries = await marksAPI.getEntries({ teacherId: teacherProfileId });
         const enteredAssessmentIds = new Set(entries.map((e) => e.assessmentId));
         setPendingCount(assessments.filter((a) => !enteredAssessmentIds.has(a.id)).length);

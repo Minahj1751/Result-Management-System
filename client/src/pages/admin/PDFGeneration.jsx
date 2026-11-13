@@ -9,6 +9,7 @@ import Table from '../../components/Table';
 
 export default function PDFGeneration() {
   const [students, setStudents] = useState([]);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [generatingId, setGeneratingId] = useState(null);
   const [generatingBulk, setGeneratingBulk] = useState(false);
@@ -45,8 +46,9 @@ export default function PDFGeneration() {
   const loadStudents = async () => {
     try {
       setLoading(true);
-      const data = await studentAPI.getStudents({ ...cleanParams(filter), limit: 200 });
+      const data = await studentAPI.getStudents({ ...cleanParams(filter), limit: 500 });
       setStudents(data.students || []);
+      setSelectedIds(new Set());
     } catch (error) {
       alert('Error loading students');
     } finally {
@@ -71,7 +73,11 @@ export default function PDFGeneration() {
   const downloadBulkPDF = async () => {
     try {
       setGeneratingBulk(true);
-      await pdfAPI.downloadClassMarksheets(cleanParams(filter), 'marksheets.zip');
+      const studentIds = selectedIds.size > 0 ? [...selectedIds].join(',') : undefined;
+      await pdfAPI.downloadClassMarksheets(
+        { ...cleanParams(filter), studentIds },
+        selectedIds.size > 0 ? `marksheets_selected_${selectedIds.size}.zip` : 'marksheets.zip'
+      );
     } catch (error) {
       alert('Error generating bulk PDFs');
     } finally {
@@ -79,7 +85,26 @@ export default function PDFGeneration() {
     }
   };
 
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = students.length > 0 && students.every((s) => selectedIds.has(s.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(students.map((s) => s.id)));
+  };
+
   const columns = [
+    {
+      key: 'select', label: '',
+      render: (val, row) => (
+        <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} className="w-4 h-4 text-blue-600" />
+      ),
+    },
     { key: 'studentId', label: 'Student ID' },
     { key: 'fullName', label: 'Name' },
     {
@@ -112,13 +137,19 @@ export default function PDFGeneration() {
           <Button onClick={loadStudents} disabled={loading}>{loading ? 'Loading...' : 'Load Students'}</Button>
           {students.length > 0 && (
             <Button onClick={downloadBulkPDF} disabled={generatingBulk} variant="success">
-              {generatingBulk ? 'Generating...' : 'Download All (ZIP)'}
+              {generatingBulk ? 'Generating...' : selectedIds.size > 0 ? `Download Selected (${selectedIds.size})` : 'Download All (ZIP)'}
             </Button>
           )}
         </div>
       </Card>
       {students.length > 0 && (
         <Card title="Students">
+          <div className="mb-3">
+            <label className="text-sm text-gray-600 inline-flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="w-4 h-4 text-blue-600" />
+              Select all loaded students
+            </label>
+          </div>
           <Table columns={columns} data={students} />
           <div className="mt-4 text-sm text-gray-600">
             {students.length} students loaded. Results must be finalized before marksheets can be generated.

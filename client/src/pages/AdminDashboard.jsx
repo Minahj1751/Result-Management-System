@@ -35,7 +35,7 @@ export default function AdminDashboard() {
       const [semesters, assessments] = activeSession
         ? await Promise.all([
             academicAPI.getSemesters(activeSession.id),
-            assessmentAPI.getAssessments({ academicSessionId: activeSession.id }),
+            assessmentAPI.getAssessments({ academicSessionId: activeSession.id, limit: 1 }),
           ])
         : [[], []];
 
@@ -46,7 +46,7 @@ export default function AdminDashboard() {
         totalSubjects: subjects.length,
         totalSessions: sessions.length,
         totalSemesters: semesters.length,
-        totalAssessments: assessments.length,
+        totalAssessments: assessments.pagination?.total ?? (assessments.assessments?.length || 0),
       });
     } catch (error) {
       console.error('Error loading stats:', error);

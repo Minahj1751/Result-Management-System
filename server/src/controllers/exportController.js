@@ -28,9 +28,14 @@ const buildEnrollmentWhere = ({ academicSessionId, semesterId, schoolClassId, se
  */
 const exportStudents = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId, search } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, search, ids } = req.query;
+
+    const selectedIds = ids
+      ? String(ids).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
 
     const where = {
+      ...(selectedIds && { id: { in: selectedIds } }),
       ...(search && {
         OR: [
           { fullName: { contains: search, mode: 'insensitive' } },
@@ -117,7 +122,11 @@ const exportStudents = async (req, res, next) => {
  */
 const exportAttendance = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId, studentId } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, studentId, ids } = req.query;
+
+    const selectedIds = ids
+      ? String(ids).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
 
     const records = await prisma.attendanceRecord.findMany({
       where: {
@@ -126,6 +135,7 @@ const exportAttendance = async (req, res, next) => {
         ...(schoolClassId && { schoolClassId }),
         ...(sectionId && { sectionId }),
         ...(studentId && { studentId }),
+        ...(selectedIds && { studentId: { in: selectedIds } }),
       },
       include: {
         student: true,
@@ -177,7 +187,11 @@ const exportAttendance = async (req, res, next) => {
  */
 const exportResults = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, ids } = req.query;
+
+    const selectedIds = ids
+      ? String(ids).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
 
     const snapshots = await prisma.resultSnapshot.findMany({
       where: {
@@ -186,6 +200,7 @@ const exportResults = async (req, res, next) => {
         ...(semesterId && { semesterId }),
         ...(schoolClassId && { schoolClassId }),
         ...(sectionId && { sectionId }),
+        ...(selectedIds && { studentId: { in: selectedIds } }),
       },
       include: {
         student: true,

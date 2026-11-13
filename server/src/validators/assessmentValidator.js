@@ -64,6 +64,46 @@ const createAssessmentValidation = [
     .withMessage('Invalid date format'),
 ];
 
+const bulkCreateAssessmentValidation = [
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Assessment name is required'),
+  body('categoryId')
+    .trim()
+    .notEmpty()
+    .withMessage('Category ID is required'),
+  body('academicSessionId')
+    .trim()
+    .notEmpty()
+    .withMessage('Academic session ID is required'),
+  body('semesterId')
+    .trim()
+    .notEmpty()
+    .withMessage('Semester ID is required'),
+  body('maximumMarks')
+    .trim()
+    .notEmpty()
+    .withMessage('Maximum marks is required')
+    .isFloat({ min: 0 })
+    .withMessage('Maximum marks must be a positive number'),
+  body('defaultDate')
+    .trim()
+    .notEmpty()
+    .withMessage('Default date is required')
+    .isISO8601()
+    .withMessage('Invalid date format'),
+  body('combinations')
+    .isArray({ min: 1 })
+    .withMessage('At least one class-section-subject combination is required')
+    .custom((combos) => {
+      return combos.every(
+        (c) => c && c.schoolClassId && c.sectionId && c.subjectId
+      );
+    })
+    .withMessage('Each combination must include schoolClassId, sectionId and subjectId'),
+];
+
 const upsertMarksValidation = [
   body('studentId')
     .trim()
@@ -94,6 +134,7 @@ const bulkUpsertMarksValidation = [
 module.exports = {
   createAssessmentCategoryValidation,
   createAssessmentValidation,
+  bulkCreateAssessmentValidation,
   upsertMarksValidation,
   bulkUpsertMarksValidation,
 };

@@ -25,6 +25,8 @@ export default function MarksEntry() {
   const [marks, setMarks] = useState({});
   const [statuses, setStatuses] = useState({});
   const [individualDates, setIndividualDates] = useState({});
+  const [studentSearch, setStudentSearch] = useState('');
+  const [savedSnapshot, setSavedSnapshot] = useState('');
 
   useEffect(() => { loadInitialData(); }, []);
 
@@ -72,8 +74,9 @@ export default function MarksEntry() {
         schoolClassId: assignment.schoolClassId,
         sectionId: assignment.sectionId,
         subjectId: assignment.subjectId,
+        limit: 100,
       }));
-      setAssessments(data);
+      setAssessments(data.assessments || []);
       setSelectedAssessment(null);
       setStudents([]);
     } catch (error) {
@@ -117,6 +120,8 @@ export default function MarksEntry() {
       setMarks(initialMarks);
       setStatuses(initialStatuses);
       setIndividualDates(initialDates);
+      setStudentSearch('');
+      setSavedSnapshot(JSON.stringify({ m: initialMarks, s: initialStatuses, d: initialDates }));
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
     } finally {
@@ -187,6 +192,20 @@ export default function MarksEntry() {
   const mySubjects = [...new Map(myAssignments.map((a) => [a.subjectId, a.subject])).values()];
   const myClasses = [...new Map(myAssignments.map((a) => [`${a.schoolClassId}-${a.sectionId}`, a])).values()];
 
+  const q = studentSearch.trim().toLowerCase();
+  const visibleStudents = q
+    ? students.filter((s) =>
+        (s.student?.fullName || '').toLowerCase().includes(q) ||
+        (s.student?.studentId || '').toLowerCase().includes(q) ||
+        String(s.enrollment?.rollNumber ?? '').includes(q))
+    : students;
+
+  const hasUnsavedChanges = savedSnapshot !== JSON.stringify({ m: marks, s: statuses, d: individualDates });
+  const invalidMarks = students.some((s) => {
+    const v = marks[s.student?.id];
+    return v !== undefined && v !== '' && (!Number.isFinite(parseFloat(v)) || parseFloat(v) < 0 || parseFloat(v) > parseFloat(selectedAssessment?.maximumMarks || Infinity));
+  });
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Marks Entry</h1>
@@ -254,10 +273,31 @@ export default function MarksEntry() {
             <Card title={`Marks Entry — ${selectedAssessment.name} (Max: ${selectedAssessment.maximumMarks})`}>
               {loading ? <div className="text-center py-8">Loading...</div> : (
                 <>
-                  <Table columns={columns} data={students} />
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <Input
+                      placeholder="Search by name, ID or roll..."
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                      className="max-w-xs"
+                    />
+                    <span className="text-sm text-gray-600">
+                      Showing {visibleStudents.length} of {students.length} students
+                    </span>
+                    {hasUnsavedChanges && (
+                      <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Unsaved changes
+                      </span>
+                    )}
+                    {invalidMarks && (
+                      <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                        Some marks exceed the maximum or are invalid
+                      </span>
+                    )}
+                  </div>
+                  <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
                   <div className="mt-4 flex justify-between items-center">
                     <div className="text-sm text-gray-600">{students.length} students</div>
-                    <Button onClick={handleSubmit} disabled={saving}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
+                    <Button onClick={handleSubmit} disabled={saving || invalidMarks}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
                   </div>
                 </>
               )}

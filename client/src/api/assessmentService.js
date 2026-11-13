@@ -21,6 +21,14 @@ export const assessmentAPI = {
     const response = await api.get('/assessments', { params });
     return response.data;
   },
+  getEligibleSubjects: async (params) => {
+    const response = await api.get('/assessments/eligible-subjects', { params });
+    return response.data;
+  },
+  bulkCreateAssessments: async (data) => {
+    const response = await api.post('/assessments/bulk', data);
+    return response.data;
+  },
   createAssessment: async (data) => {
     const response = await api.post('/assessments', data);
     return response.data;

@@ -6,6 +6,7 @@ const validate = require('../middleware/validate');
 const {
   createAssessmentCategoryValidation,
   createAssessmentValidation,
+  bulkCreateAssessmentValidation,
 } = require('../validators/assessmentValidator');
 const { idParamValidation } = require('../validators/academicValidator');
 
@@ -17,7 +18,9 @@ router.delete('/categories/:id', authenticate, isAdmin, idParamValidation, valid
 
 // Assessments
 router.get('/', authenticate, assessmentController.getAssessments);
+router.get('/eligible-subjects', authenticate, assessmentController.getEligibleSubjects);
 router.post('/', authenticate, isAdmin, createAssessmentValidation, validate, assessmentController.createAssessment);
+router.post('/bulk', authenticate, isAdmin, bulkCreateAssessmentValidation, validate, assessmentController.bulkCreateAssessments);
 router.patch('/:id', authenticate, isAdmin, idParamValidation, validate, assessmentController.updateAssessment);
 router.delete('/:id', authenticate, isAdmin, idParamValidation, validate, assessmentController.deleteAssessment);
 

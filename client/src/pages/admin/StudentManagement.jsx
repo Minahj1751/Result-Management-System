@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { studentAPI } from '../../api/studentService';
 import { academicAPI } from '../../api/academicService';
 import { exportAPI } from '../../api/exportService';
@@ -6,14 +6,19 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Modal from '../../components/Modal';
+import Pagination from '../../components/Pagination';
+import SearchInput from '../../components/SearchInput';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
+import BulkActionToolbar from '../../components/BulkActionToolbar';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 const emptyStudent = { studentId: '', admissionNumber: '', fullName: '', dateOfBirth: '', guardianName: '', guardianPhone: '' };
 const emptyEnrollment = { studentId: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '', rollNumber: '' };
 
 export default function StudentManagement() {
   const [students, setStudents] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [sessions, setSessions] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -27,9 +32,12 @@ export default function StudentManagement() {
   const [filter, setFilter] = useState({ search: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '' });
   const [formData, setFormData] = useState(emptyStudent);
   const [enrollmentForm, setEnrollmentForm] = useState(emptyEnrollment);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(null); // 'activate' | 'deactivate'
 
   useEffect(() => { loadInitial(); }, []);
-  useEffect(() => { loadData(); }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId]);
+  useEffect(() => { loadData(1); }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId]);
+  useEffect(() => { setSelectedIds(new Set()); }, [filter, pagination.page, pagination.limit]);
 
   const loadInitial = async () => {
     try {
@@ -41,20 +49,29 @@ export default function StudentManagement() {
     }
   };
 
-  const loadData = async () => {
+  const cleanParams = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== ''));
+
+  const loadData = useCallback(async (pageOverride, limitOverride) => {
     try {
       setLoading(true);
-      const params = Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== ''));
+      const params = cleanParams({
+        ...filter,
+        page: pageOverride ?? pagination.page,
+        limit: limitOverride ?? pagination.limit,
+      });
       const data = await studentAPI.getStudents(params);
       setStudents(data.students || []);
+      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
     } catch (error) {
       console.error('Error loading students:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter, pagination.page, pagination.limit]);
 
-  const cleanParams = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== ''));
+  const handleSearch = (search) => {
+    setFilter((f) => ({ ...f, search }));
+  };
 
   const handleSessionFilter = async (academicSessionId) => {
     setFilter((f) => ({ ...f, academicSessionId, semesterId: '' }));
@@ -64,6 +81,28 @@ export default function StudentManagement() {
   const handleClassFilter = async (schoolClassId) => {
     setFilter((f) => ({ ...f, schoolClassId, sectionId: '' }));
     setSections(schoolClassId ? await academicAPI.getSections(schoolClassId) : []);
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const allPageSelected = students.length > 0 && students.every((s) => selectedIds.has(s.id));
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      if (allPageSelected) {
+        const next = new Set(prev);
+        students.forEach((s) => next.delete(s.id));
+        return next;
+      }
+      const next = new Set(prev);
+      students.forEach((s) => next.add(s.id));
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -139,13 +178,34 @@ export default function StudentManagement() {
 
   const handleExport = async () => {
     try {
-      await exportAPI.students(cleanParams(filter));
+      await exportAPI.students(cleanParams({
+        ...filter,
+        ids: selectedIds.size > 0 ? [...selectedIds].join(',') : undefined,
+      }));
     } catch (error) {
       alert('Error exporting students');
     }
   };
 
+  const handleBulkStatus = async () => {
+    try {
+      const result = await studentAPI.bulkUpdateStatus([...selectedIds], bulkConfirm === 'activate');
+      alert(`Updated ${result.updated} student(s)`);
+      setSelectedIds(new Set());
+      setBulkConfirm(null);
+      loadData();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error updating students');
+    }
+  };
+
   const columns = [
+    {
+      key: 'select', label: '',
+      render: (val, row) => (
+        <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} className="w-4 h-4 text-blue-600" />
+      ),
+    },
     { key: 'studentId', label: 'Student ID' },
     { key: 'fullName', label: 'Full Name' },
     { key: 'admissionNumber', label: 'Admission No', render: (v) => v || '-' },
@@ -186,23 +246,52 @@ export default function StudentManagement() {
 
       <Card className="mb-6">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-          <Input placeholder="Search name / ID..." value={filter.search}
-            onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-            onKeyDown={(e) => e.key === 'Enter' && loadData()} />
+          <SearchInput placeholder="Search name / ID..." value={filter.search} onSearch={handleSearch} />
           <Select placeholder="Session" value={filter.academicSessionId} onChange={(e) => handleSessionFilter(e.target.value)} options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
           <Select placeholder="Semester" value={filter.semesterId} onChange={(e) => setFilter({ ...filter, semesterId: e.target.value })} options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
           <Select placeholder="Class" value={filter.schoolClassId} onChange={(e) => handleClassFilter(e.target.value)} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
           <Select placeholder="Section" value={filter.sectionId} onChange={(e) => setFilter({ ...filter, sectionId: e.target.value })} options={sections.map((s) => ({ value: s.id, label: s.name }))} />
           <div className="flex gap-2">
-            <Button onClick={loadData}>Search</Button>
-            <Button variant="secondary" onClick={handleExport}>Export</Button>
+            <Button variant="secondary" onClick={handleExport}>
+              {selectedIds.size > 0 ? `Export Selected (${selectedIds.size})` : 'Export All'}
+            </Button>
           </div>
         </div>
       </Card>
 
       <Card title="Students" actions={<Button onClick={() => { setIsEdit(false); setFormData(emptyStudent); setIsModalOpen(true); }}>Add Student</Button>}>
-        {loading ? <div className="text-center py-8">Loading...</div> : <Table columns={columns} data={students} />}
+        {loading ? <div className="text-center py-8">Loading...</div> : (
+          <>
+            <div className="mb-3 flex items-center gap-3">
+              <label className="text-sm text-gray-600 inline-flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="w-4 h-4 text-blue-600" />
+                Select all on this page
+              </label>
+            </div>
+            <Table columns={columns} data={students} emptyMessage="No students match the current filters" />
+            <Pagination
+              pagination={pagination}
+              onPageChange={(p) => loadData(p)}
+              onLimitChange={(l) => loadData(1, l)}
+            />
+          </>
+        )}
       </Card>
+
+      <BulkActionToolbar count={selectedIds.size} onClear={() => setSelectedIds(new Set())}>
+        <Button size="sm" variant="success" onClick={() => setBulkConfirm('activate')}>Activate</Button>
+        <Button size="sm" variant="secondary" onClick={() => setBulkConfirm('deactivate')}>Deactivate</Button>
+      </BulkActionToolbar>
+
+      <ConfirmDialog
+        isOpen={!!bulkConfirm}
+        onClose={() => setBulkConfirm(null)}
+        onConfirm={handleBulkStatus}
+        title={bulkConfirm === 'activate' ? 'Activate Students' : 'Deactivate Students'}
+        message={`${bulkConfirm === 'activate' ? 'Activate' : 'Deactivate'} ${selectedIds.size} selected student(s)?`}
+        confirmLabel={bulkConfirm === 'activate' ? 'Activate' : 'Deactivate'}
+        danger={bulkConfirm === 'deactivate'}
+      />
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={isEdit ? 'Edit Student' : 'Add Student'}>
         <form onSubmit={handleSubmit} className="space-y-4">

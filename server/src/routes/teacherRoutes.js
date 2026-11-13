@@ -13,6 +13,7 @@ const {
 // Teacher Assignments (must be before /:id to avoid "assignments" matching as an ID)
 router.get('/assignments', authenticate, teacherController.getTeacherAssignments);
 router.post('/assignments', authenticate, isAdmin, createTeacherAssignmentValidation, validate, teacherController.createTeacherAssignment);
+router.post('/assignments/bulk', authenticate, isAdmin, teacherController.bulkCreateTeacherAssignments);
 router.patch('/assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.updateTeacherAssignment);
 router.delete('/assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.deleteTeacherAssignment);
 
@@ -25,6 +26,7 @@ router.delete('/class-teacher-assignments/:id', authenticate, isAdmin, idParamVa
 // Teachers
 router.get('/', authenticate, isAdmin, teacherController.getTeachers);
 router.post('/', authenticate, isAdmin, createTeacherValidation, validate, teacherController.createTeacher);
+router.patch('/bulk-status', authenticate, isAdmin, teacherController.bulkUpdateTeacherStatus);
 router.get('/:id', authenticate, idParamValidation, validate, teacherController.getTeacherById);
 router.patch('/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.updateTeacher);
 

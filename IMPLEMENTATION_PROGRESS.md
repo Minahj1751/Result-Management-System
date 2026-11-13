@@ -135,3 +135,49 @@ _Last updated: 2026-11-13_
 - Server: syntax + app load verified; API smoke tests not run (requires running MySQL + seeded data)
 - Client: production build passes
 - Result engine changes verified by code review only
+
+---
+
+# UI/UX & Bulk Operations Upgrade (2026-11-14)
+
+## New shared components (client/src)
+- `components/MultiSelect.jsx` — searchable dropdown multi-select with select-all-matching, chips, clear, counts, loading/empty states
+- `components/Pagination.jsx` — first/prev/numbered/next/last + page-size selector (10/20/50/100) + "Showing X–Y of Z"
+- `components/SearchInput.jsx` + `hooks/useDebounce.js` — debounced search input
+- `components/BulkActionToolbar.jsx` — sticky selected-count action bar
+- `components/ConfirmDialog.jsx` — Modal-based confirmation for destructive actions
+- `style.css` — styles for all new components + wizard steps/summary
+
+## Backend changes (server/src)
+- `assessmentController.getAssessments` — now paginated (`page`, `limit`, `search`, `sortBy`, `sortOrder`); returns `{ assessments, pagination }`; marks entries replaced by `_count.marksEntries` (perf)
+- `assessmentController.getEligibleSubjects` + `GET /api/assessments/eligible-subjects` — subject eligibility per class-section derived from active teacher assignments (falls back to all subjects when no assignments exist)
+- `assessmentController.bulkCreateAssessments` + `POST /api/assessments/bulk` + `bulkCreateAssessmentValidation` — validates entities, dedupes, skips existing combos via `createMany skipDuplicates`, returns created/skipped/invalid counts
+- `teacherController.getTeachers` — paginated + `search`, `role`, `includeInactive`; returns `{ teachers, pagination }`
+- `teacherController.bulkUpdateTeacherStatus` + `PATCH /api/teachers/bulk-status`
+- `teacherController.bulkCreateTeacherAssignments` + `POST /api/teachers/assignments/bulk` — multi subject x class-section assignment with dedupe
+- `studentController.bulkUpdateStudentStatus` + `PATCH /api/students/bulk-status`
+- `resultController.calculateClassResults` / `bulkFinalizeResults` — accept `sectionIds` (multi-section) in addition to `sectionId`
+- `pdfController.generateClassMarksheets` — accepts `studentIds` for selected-student ZIP
+- `exportController` — `exportStudents`/`exportAttendance`/`exportResults` accept `ids` for selected-record export
+
+## Frontend changes
+- `pages/admin/AssessmentManagement.jsx` — rewritten: 4-step wizard (Info ? Classes & Sections ? Subjects ? Preview) with eligibility filtering, duplicate-safe bulk create, result summary, paginated/searchable table, ConfirmDialog delete
+- `pages/admin/StudentManagement.jsx` — row checkboxes, select-all-on-page, bulk activate/deactivate, export selected/all, debounced search, server-side pagination + page size
+- `pages/admin/TeacherManagement.jsx` — paginated + searchable teacher list, row selection, bulk activate/deactivate, Bulk Assign modal (multi subject x multi class-section)
+- `pages/admin/ResultsManagement.jsx` — multi-section selection via MultiSelect for calculate/finalize, ConfirmDialog before finalize
+- `pages/admin/PDFGeneration.jsx` — row selection ? selected-students ZIP download
+- `pages/teacher/MarksEntry.jsx` — student search (name/ID/roll), unsaved-changes + invalid-marks indicators, save disabled on invalid marks
+- `pages/classTeacher/AttendanceManagement.jsx` — student search, "Mark all present" bulk fill
+- `pages/AdminDashboard.jsx`, `pages/TeacherDashboard.jsx` — updated for new assessments response shape
+
+## Verification
+- `npm run build` (client) — passed
+- `node --check` on all modified server files — clean
+- New routes smoke-tested: return 401 (auth required), confirming registration
+
+## Remaining limitations
+- Config tables (classes, sections, subjects, sessions, semesters) remain unpaginated — small bounded lists; sessions/semesters managed on one page
+- Attendance remains semester-aggregate per existing schema (no per-date daily attendance)
+- Bulk operations report partial failures but are not wrapped in DB transactions (createMany is atomic per call; per-record validation errors are collected)
+- Subject eligibility is advisory (derived from teacher assignments); backend accepts any valid subject/class-section combo
+- E2E test with real login still recommended

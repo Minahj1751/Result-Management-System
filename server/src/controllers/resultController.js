@@ -30,22 +30,37 @@ const calculateStudentResult = async (req, res, next) => {
 /**
  * Calculate results for entire class
  */
+const parseSectionIds = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  return String(value).split(',').map((s) => s.trim()).filter(Boolean);
+};
+
 const calculateClassResults = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, sectionIds } = req.query;
 
-    if (!academicSessionId || !semesterId || !schoolClassId || !sectionId) {
+    if (!academicSessionId || !semesterId || !schoolClassId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const results = await resultCalculationService.calculateClassResults(
-      academicSessionId,
-      semesterId,
-      schoolClassId,
-      sectionId
-    );
+    const ids = sectionIds ? parseSectionIds(sectionIds) : (sectionId ? [sectionId] : []);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'sectionId or sectionIds is required' });
+    }
 
-    res.json(results);
+    const allResults = [];
+    for (const sid of ids) {
+      const results = await resultCalculationService.calculateClassResults(
+        academicSessionId,
+        semesterId,
+        schoolClassId,
+        sid
+      );
+      allResults.push(...results);
+    }
+
+    res.json(allResults);
   } catch (error) {
     next(error);
   }
@@ -154,55 +169,63 @@ const getResultSnapshots = async (req, res, next) => {
  */
 const bulkFinalizeResults = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId } = req.body;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, sectionIds } = req.body;
 
-    if (!academicSessionId || !semesterId || !schoolClassId || !sectionId) {
+    if (!academicSessionId || !semesterId || !schoolClassId) {
       return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const ids = sectionIds ? parseSectionIds(sectionIds) : (sectionId ? [sectionId] : []);
+    if (ids.length === 0) {
+      return res.status(400).json({ error: 'sectionId or sectionIds is required' });
     }
 
     const finalizedBy = req.user.teacherProfile?.id || req.user.id;
 
-    // Get all enrolled students
-    const enrollments = await prisma.studentEnrollment.findMany({
-      where: {
-        academicSessionId,
-        semesterId,
-        schoolClassId,
-        sectionId,
-        isActive: true,
-      },
-    });
-
-    // Only finalize subjects that actually have assessments for this class/section
-    const assessments = await prisma.assessment.findMany({
-      where: { academicSessionId, semesterId, schoolClassId, sectionId },
-      select: { subjectId: true },
-      distinct: ['subjectId'],
-    });
-    const subjects = assessments.map((a) => ({ id: a.subjectId }));
-
     const results = [];
     const errors = [];
 
-    for (const enrollment of enrollments) {
-      for (const subject of subjects) {
-        try {
-          const snapshot = await resultCalculationService.finalizeResultSnapshot(
-            enrollment.studentId,
-            academicSessionId,
-            semesterId,
-            schoolClassId,
-            sectionId,
-            subject.id,
-            finalizedBy
-          );
-          results.push(snapshot);
-        } catch (error) {
-          errors.push({
-            studentId: enrollment.studentId,
-            subjectId: subject.id,
-            error: error.message,
-          });
+    for (const sid of ids) {
+      // Get all enrolled students
+      const enrollments = await prisma.studentEnrollment.findMany({
+        where: {
+          academicSessionId,
+          semesterId,
+          schoolClassId,
+          sectionId: sid,
+          isActive: true,
+        },
+      });
+
+      // Only finalize subjects that actually have assessments for this class/section
+      const assessments = await prisma.assessment.findMany({
+        where: { academicSessionId, semesterId, schoolClassId, sectionId: sid },
+        select: { subjectId: true },
+        distinct: ['subjectId'],
+      });
+      const subjects = assessments.map((a) => ({ id: a.subjectId }));
+
+      for (const enrollment of enrollments) {
+        for (const subject of subjects) {
+          try {
+            const snapshot = await resultCalculationService.finalizeResultSnapshot(
+              enrollment.studentId,
+              academicSessionId,
+              semesterId,
+              schoolClassId,
+              sid,
+              subject.id,
+              finalizedBy
+            );
+            results.push(snapshot);
+          } catch (error) {
+            errors.push({
+              studentId: enrollment.studentId,
+              sectionId: sid,
+              subjectId: subject.id,
+              error: error.message,
+            });
+          }
         }
       }
     }

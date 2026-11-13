@@ -20,6 +20,7 @@ export default function AttendanceManagement() {
   const [sections, setSections] = useState([]);
   const [totalWorkingDays, setTotalWorkingDays] = useState(0);
   const [daysAttended, setDaysAttended] = useState({});
+  const [studentSearch, setStudentSearch] = useState('');
 
   useEffect(() => { loadInitialData(); }, []);
 
@@ -81,6 +82,7 @@ export default function AttendanceManagement() {
       });
       setTotalWorkingDays(workingDays);
       setDaysAttended(attended);
+      setStudentSearch('');
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading attendance');
     } finally {
@@ -132,6 +134,20 @@ export default function AttendanceManagement() {
     } catch (error) {
       alert('Error exporting attendance');
     }
+  };
+
+  const q = studentSearch.trim().toLowerCase();
+  const visibleStudents = q
+    ? students.filter((s) =>
+        (s.student?.fullName || '').toLowerCase().includes(q) ||
+        (s.student?.studentId || '').toLowerCase().includes(q) ||
+        String(s.enrollment?.rollNumber ?? '').includes(q))
+    : students;
+
+  const markAllPresent = () => {
+    const next = { ...daysAttended };
+    students.forEach((s) => { next[s.student.id] = totalWorkingDays; });
+    setDaysAttended(next);
   };
 
   const columns = [
@@ -199,7 +215,21 @@ export default function AttendanceManagement() {
               <Card title="Attendance Entry">
                 {loading ? <div className="text-center py-8">Loading...</div> : (
                   <>
-                    <Table columns={columns} data={students} />
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
+                      <Input
+                        placeholder="Search by name, ID or roll..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        className="max-w-xs"
+                      />
+                      <span className="text-sm text-gray-600">
+                        Showing {visibleStudents.length} of {students.length} students
+                      </span>
+                      <Button size="sm" variant="secondary" onClick={markAllPresent}>
+                        Mark all present ({totalWorkingDays} days)
+                      </Button>
+                    </div>
+                    <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
                     <div className="mt-4 flex justify-between items-center">
                       <div className="text-sm text-gray-600">{students.length} students</div>
                       <Button onClick={handleSubmit} disabled={saving}>{saving ? 'Saving...' : 'Save Attendance'}</Button>
