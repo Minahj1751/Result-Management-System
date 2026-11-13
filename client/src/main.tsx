@@ -20,10 +20,40 @@ import MarksEntry from './pages/teacher/MarksEntry';
 import AttendanceManagement from './pages/classTeacher/AttendanceManagement';
 import './style.css';
 
-const ProtectedRoute = ({ children }) => {
+const getStoredUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('user') || 'null');
+  } catch {
+    return null;
+  }
+};
+
+const ROLE_HOME = {
+  ADMIN: '/admin/dashboard',
+  SUBJECT_TEACHER: '/teacher/dashboard',
+  CLASS_TEACHER: '/class-teacher/dashboard',
+};
+
+const ProtectedRoute = ({ children, roles }) => {
   const token = localStorage.getItem('token');
-  if (!token) {
+  const user = getStoredUser();
+
+  if (!token || !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to={ROLE_HOME[user.role] || '/login'} replace />;
+  }
+
+  return children;
+};
+
+const PublicRoute = ({ children }) => {
+  const token = localStorage.getItem('token');
+  const user = getStoredUser();
+  if (token && user) {
+    return <Navigate to={ROLE_HOME[user.role] || '/login'} replace />;
   }
   return children;
 };
@@ -32,11 +62,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route
           path="/admin/*"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute roles={['ADMIN']}>
               <MainLayout />
             </ProtectedRoute>
           }
@@ -56,7 +86,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route
           path="/teacher/*"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute roles={['SUBJECT_TEACHER', 'CLASS_TEACHER']}>
               <MainLayout />
             </ProtectedRoute>
           }
@@ -67,7 +97,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route
           path="/class-teacher/*"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute roles={['CLASS_TEACHER', 'SUBJECT_TEACHER']}>
               <MainLayout />
             </ProtectedRoute>
           }
@@ -75,7 +105,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="dashboard" element={<ClassTeacherDashboard />} />
           <Route path="attendance" element={<AttendanceManagement />} />
         </Route>
-        <Route path="/" element={<LoginPage />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

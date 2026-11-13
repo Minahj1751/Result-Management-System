@@ -51,7 +51,11 @@ export default function SectionManagement() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await academicAPI.createSection(formData);
+      if (isEdit) {
+        await academicAPI.updateSection(editingId, { name: formData.name });
+      } else {
+        await academicAPI.createSection(formData);
+      }
       setIsModalOpen(false);
       setFormData({ name: '', schoolClassId: '' });
       setIsEdit(false);
@@ -59,7 +63,7 @@ export default function SectionManagement() {
       loadSections();
     } catch (error) {
       console.error('Error saving section:', error);
-      alert('Error saving section');
+      alert(error.response?.data?.error || 'Error saving section');
     }
   };
 
@@ -76,10 +80,10 @@ export default function SectionManagement() {
   const handleDelete = async (sectionId) => {
     if (!confirm('Are you sure you want to delete this section?')) return;
     try {
-      alert('Delete functionality requires backend implementation');
+      await academicAPI.deleteSection(sectionId);
+      loadSections();
     } catch (error) {
-      console.error('Error deleting section:', error);
-      alert('Error deleting section');
+      alert(error.response?.data?.error || 'Error deleting section');
     }
   };
 

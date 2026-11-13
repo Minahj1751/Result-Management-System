@@ -1,0 +1,242 @@
+const ExcelJS = require('exceljs');
+const prisma = require('../config/database');
+
+/**
+ * Helper: send an ExcelJS workbook as a download
+ */
+const sendWorkbook = async (res, workbook, filename) => {
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  await workbook.xlsx.write(res);
+  res.end();
+};
+
+const buildEnrollmentWhere = ({ academicSessionId, semesterId, schoolClassId, sectionId }) => {
+  const conditions = [];
+  if (academicSessionId) conditions.push({ academicSessionId });
+  if (semesterId) conditions.push({ semesterId });
+  if (schoolClassId) conditions.push({ schoolClassId });
+  if (sectionId) conditions.push({ sectionId });
+  return conditions.length ? { AND: conditions } : {};
+};
+
+/**
+ * Export students (with enrollments) to Excel
+ */
+const exportStudents = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId, search } = req.query;
+
+    const where = {
+      ...(search && {
+        OR: [
+          { fullName: { contains: search, mode: 'insensitive' } },
+          { studentId: { contains: search, mode: 'insensitive' } },
+          { admissionNumber: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    };
+
+    const students = await prisma.student.findMany({
+      where,
+      include: {
+        enrollments: {
+          where: buildEnrollmentWhere({ academicSessionId, semesterId, schoolClassId, sectionId }),
+          include: {
+            academicSession: true,
+            semester: true,
+            schoolClass: true,
+            section: true,
+          },
+        },
+      },
+      orderBy: { studentId: 'asc' },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Students');
+    ws.columns = [
+      { header: 'Student ID', key: 'studentId', width: 15 },
+      { header: 'Admission No', key: 'admissionNumber', width: 15 },
+      { header: 'Full Name', key: 'fullName', width: 30 },
+      { header: 'Date of Birth', key: 'dob', width: 15 },
+      { header: 'Guardian', key: 'guardian', width: 25 },
+      { header: 'Guardian Phone', key: 'phone', width: 18 },
+      { header: 'Session', key: 'session', width: 15 },
+      { header: 'Semester', key: 'semester', width: 15 },
+      { header: 'Class', key: 'className', width: 12 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Roll', key: 'roll', width: 8 },
+      { header: 'Status', key: 'status', width: 10 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const s of students) {
+      const enrollments = s.enrollments.filter((e) => e.isActive);
+      if (enrollments.length === 0) {
+        ws.addRow({
+          studentId: s.studentId,
+          admissionNumber: s.admissionNumber || '',
+          fullName: s.fullName,
+          dob: s.dateOfBirth ? s.dateOfBirth.toISOString().slice(0, 10) : '',
+          guardian: s.guardianName || '',
+          phone: s.guardianPhone || '',
+          status: s.isActive ? 'Active' : 'Inactive',
+        });
+      } else {
+        for (const e of enrollments) {
+          ws.addRow({
+            studentId: s.studentId,
+            admissionNumber: s.admissionNumber || '',
+            fullName: s.fullName,
+            dob: s.dateOfBirth ? s.dateOfBirth.toISOString().slice(0, 10) : '',
+            guardian: s.guardianName || '',
+            phone: s.guardianPhone || '',
+            session: e.academicSession?.name || '',
+            semester: e.semester?.name || '',
+            className: e.schoolClass?.name || '',
+            section: e.section?.name || '',
+            roll: e.rollNumber,
+            status: s.isActive ? 'Active' : 'Inactive',
+          });
+        }
+      }
+    }
+
+    await sendWorkbook(res, workbook, `students_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Export attendance records to Excel
+ */
+const exportAttendance = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId, studentId } = req.query;
+
+    const records = await prisma.attendanceRecord.findMany({
+      where: {
+        ...(academicSessionId && { academicSessionId }),
+        ...(semesterId && { semesterId }),
+        ...(schoolClassId && { schoolClassId }),
+        ...(sectionId && { sectionId }),
+        ...(studentId && { studentId }),
+      },
+      include: {
+        student: true,
+        academicSession: true,
+        semester: true,
+        schoolClass: true,
+        section: true,
+      },
+      orderBy: [{ schoolClass: { sortOrder: 'asc' } }, { student: { studentId: 'asc' } }],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Attendance');
+    ws.columns = [
+      { header: 'Student ID', key: 'studentId', width: 15 },
+      { header: 'Student Name', key: 'fullName', width: 30 },
+      { header: 'Session', key: 'session', width: 15 },
+      { header: 'Semester', key: 'semester', width: 15 },
+      { header: 'Class', key: 'className', width: 12 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Working Days', key: 'working', width: 14 },
+      { header: 'Days Attended', key: 'attended', width: 14 },
+      { header: 'Percentage', key: 'pct', width: 12 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const r of records) {
+      ws.addRow({
+        studentId: r.student?.studentId || '',
+        fullName: r.student?.fullName || '',
+        session: r.academicSession?.name || '',
+        semester: r.semester?.name || '',
+        className: r.schoolClass?.name || '',
+        section: r.section?.name || '',
+        working: r.totalWorkingDays,
+        attended: r.daysAttended,
+        pct: r.totalWorkingDays > 0 ? `${((r.daysAttended / r.totalWorkingDays) * 100).toFixed(2)}%` : '',
+      });
+    }
+
+    await sendWorkbook(res, workbook, `attendance_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Export finalized result snapshots to Excel
+ */
+const exportResults = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+
+    const snapshots = await prisma.resultSnapshot.findMany({
+      where: {
+        status: 'FINALIZED',
+        ...(academicSessionId && { academicSessionId }),
+        ...(semesterId && { semesterId }),
+        ...(schoolClassId && { schoolClassId }),
+        ...(sectionId && { sectionId }),
+      },
+      include: {
+        student: true,
+        subject: true,
+        academicSession: true,
+        semester: true,
+        schoolClass: true,
+        section: true,
+      },
+      orderBy: [{ student: { studentId: 'asc' } }, { subject: { sortOrder: 'asc' } }],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Results');
+    ws.columns = [
+      { header: 'Student ID', key: 'studentId', width: 15 },
+      { header: 'Student Name', key: 'fullName', width: 30 },
+      { header: 'Session', key: 'session', width: 15 },
+      { header: 'Semester', key: 'semester', width: 15 },
+      { header: 'Class', key: 'className', width: 12 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Subject', key: 'subject', width: 20 },
+      { header: 'Score (%)', key: 'score', width: 12 },
+      { header: 'Grade', key: 'grade', width: 10 },
+      { header: 'Grade Point', key: 'gp', width: 12 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const s of snapshots) {
+      ws.addRow({
+        studentId: s.student?.studentId || '',
+        fullName: s.student?.fullName || '',
+        session: s.academicSession?.name || '',
+        semester: s.semester?.name || '',
+        className: s.schoolClass?.name || '',
+        section: s.section?.name || '',
+        subject: s.subject?.name || '',
+        score: parseFloat(s.percentage),
+        grade: s.grade || '',
+        gp: s.gradePoint !== null ? parseFloat(s.gradePoint) : '',
+      });
+    }
+
+    await sendWorkbook(res, workbook, `results_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  exportStudents,
+  exportAttendance,
+  exportResults,
+};

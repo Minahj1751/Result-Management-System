@@ -62,7 +62,7 @@ const finalizeResult = async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const finalizedBy = req.user.teacherProfile.id;
+    const finalizedBy = req.user.teacherProfile?.id || req.user.id;
 
     const snapshot = await resultCalculationService.finalizeResultSnapshot(
       studentId,
@@ -160,7 +160,7 @@ const bulkFinalizeResults = async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    const finalizedBy = req.user.teacherProfile.id;
+    const finalizedBy = req.user.teacherProfile?.id || req.user.id;
 
     // Get all enrolled students
     const enrollments = await prisma.studentEnrollment.findMany({
@@ -173,8 +173,13 @@ const bulkFinalizeResults = async (req, res, next) => {
       },
     });
 
-    // Get all subjects
-    const subjects = await prisma.subject.findMany();
+    // Only finalize subjects that actually have assessments for this class/section
+    const assessments = await prisma.assessment.findMany({
+      where: { academicSessionId, semesterId, schoolClassId, sectionId },
+      select: { subjectId: true },
+      distinct: ['subjectId'],
+    });
+    const subjects = assessments.map((a) => ({ id: a.subjectId }));
 
     const results = [];
     const errors = [];

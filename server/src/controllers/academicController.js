@@ -62,6 +62,32 @@ const updateAcademicSession = async (req, res, next) => {
 };
 
 /**
+ * Delete academic session (only if it has no dependent records)
+ */
+const deleteAcademicSession = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const dependentCounts = await Promise.all([
+      prisma.semester.count({ where: { academicSessionId: id } }),
+      prisma.studentEnrollment.count({ where: { academicSessionId: id } }),
+      prisma.assessment.count({ where: { academicSessionId: id } }),
+    ]);
+
+    if (dependentCounts.some((count) => count > 0)) {
+      const error = new Error('Cannot delete session with existing semesters, enrollments, or assessments');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.academicSession.delete({ where: { id } });
+    res.json({ message: 'Academic session deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get all semesters
  */
 const getSemesters = async (req, res, next) => {
@@ -102,6 +128,57 @@ const createSemester = async (req, res, next) => {
     });
 
     res.status(201).json(semester);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update semester
+ */
+const updateSemester = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, startDate, endDate, isActive } = req.body;
+
+    const semester = await prisma.semester.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(startDate && { startDate: new Date(startDate) }),
+        ...(endDate && { endDate: new Date(endDate) }),
+        ...(isActive !== undefined && { isActive }),
+      },
+    });
+
+    res.json(semester);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete semester (only if it has no dependent records)
+ */
+const deleteSemester = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const dependentCounts = await Promise.all([
+      prisma.studentEnrollment.count({ where: { semesterId: id } }),
+      prisma.assessment.count({ where: { semesterId: id } }),
+      prisma.teacherAssignment.count({ where: { semesterId: id } }),
+      prisma.classTeacherAssignment.count({ where: { semesterId: id } }),
+    ]);
+
+    if (dependentCounts.some((count) => count > 0)) {
+      const error = new Error('Cannot delete semester with existing enrollments, assessments, or assignments');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.semester.delete({ where: { id } });
+    res.json({ message: 'Semester deleted successfully' });
   } catch (error) {
     next(error);
   }
@@ -165,6 +242,27 @@ const updateClass = async (req, res, next) => {
 };
 
 /**
+ * Delete class (only if it has no sections or dependent records)
+ */
+const deleteClass = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const sectionCount = await prisma.section.count({ where: { schoolClassId: id } });
+    if (sectionCount > 0) {
+      const error = new Error('Cannot delete class with existing sections. Delete the sections first.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.schoolClass.delete({ where: { id } });
+    res.json({ message: 'Class deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get all sections
  */
 const getSections = async (req, res, next) => {
@@ -202,6 +300,56 @@ const createSection = async (req, res, next) => {
     });
 
     res.status(201).json(section);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update section
+ */
+const updateSection = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, schoolClassId } = req.body;
+
+    const section = await prisma.section.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(schoolClassId && { schoolClassId }),
+      },
+      include: { schoolClass: true },
+    });
+
+    res.json(section);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete section (only if it has no dependent records)
+ */
+const deleteSection = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const dependentCounts = await Promise.all([
+      prisma.studentEnrollment.count({ where: { sectionId: id } }),
+      prisma.assessment.count({ where: { sectionId: id } }),
+      prisma.teacherAssignment.count({ where: { sectionId: id } }),
+      prisma.classTeacherAssignment.count({ where: { sectionId: id } }),
+    ]);
+
+    if (dependentCounts.some((count) => count > 0)) {
+      const error = new Error('Cannot delete section with existing enrollments, assessments, or assignments');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.section.delete({ where: { id } });
+    res.json({ message: 'Section deleted successfully' });
   } catch (error) {
     next(error);
   }
@@ -266,18 +414,51 @@ const updateSubject = async (req, res, next) => {
   }
 };
 
+/**
+ * Delete subject (only if it has no dependent records)
+ */
+const deleteSubject = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const dependentCounts = await Promise.all([
+      prisma.assessment.count({ where: { subjectId: id } }),
+      prisma.teacherAssignment.count({ where: { subjectId: id } }),
+      prisma.resultSnapshot.count({ where: { subjectId: id } }),
+    ]);
+
+    if (dependentCounts.some((count) => count > 0)) {
+      const error = new Error('Cannot delete subject with existing assessments, assignments, or results');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.subject.delete({ where: { id } });
+    res.json({ message: 'Subject deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAcademicSessions,
   createAcademicSession,
   updateAcademicSession,
+  deleteAcademicSession,
   getSemesters,
   createSemester,
+  updateSemester,
+  deleteSemester,
   getClasses,
   createClass,
   updateClass,
+  deleteClass,
   getSections,
   createSection,
+  updateSection,
+  deleteSection,
   getSubjects,
   createSubject,
   updateSubject,
+  deleteSubject,
 };

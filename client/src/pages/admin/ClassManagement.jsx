@@ -62,10 +62,10 @@ export default function ClassManagement() {
   const handleDelete = async (classId) => {
     if (!confirm('Are you sure you want to delete this class?')) return;
     try {
-      alert('Delete functionality requires backend implementation');
+      await academicAPI.deleteClass(classId);
+      loadClasses();
     } catch (error) {
-      console.error('Error deleting class:', error);
-      alert('Error deleting class');
+      alert(error.response?.data?.error || 'Error deleting class');
     }
   };
 

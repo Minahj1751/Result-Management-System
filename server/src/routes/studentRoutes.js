@@ -15,5 +15,6 @@ router.patch('/:id', authenticate, isAdmin, idParamValidation, validate, student
 // Enrollments
 router.post('/enrollments', authenticate, isAdmin, createEnrollmentValidation, validate, studentController.createEnrollment);
 router.patch('/enrollments/:id', authenticate, isAdmin, idParamValidation, validate, studentController.updateEnrollment);
+router.delete('/enrollments/:id', authenticate, isAdmin, idParamValidation, validate, studentController.deleteEnrollment);
 
 module.exports = router;

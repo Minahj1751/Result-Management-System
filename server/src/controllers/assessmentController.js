@@ -157,10 +157,78 @@ const updateAssessment = async (req, res, next) => {
   }
 };
 
+/**
+ * Update assessment category
+ */
+const updateAssessmentCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, code, weightage, description } = req.body;
+
+    const category = await prisma.assessmentCategory.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(code && { code }),
+        ...(weightage !== undefined && { weightage: parseFloat(weightage) }),
+        ...(description !== undefined && { description }),
+      },
+    });
+
+    res.json(category);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete assessment category (only if unused)
+ */
+const deleteAssessmentCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const assessmentCount = await prisma.assessment.count({ where: { categoryId: id } });
+    if (assessmentCount > 0) {
+      const error = new Error('Cannot delete category with existing assessments');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    await prisma.assessmentCategory.delete({ where: { id } });
+    res.json({ message: 'Category deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Delete assessment
+ */
+const deleteAssessment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const marksCount = await prisma.marksEntry.count({ where: { assessmentId: id } });
+    if (marksCount > 0) {
+      // Remove dependent marks entries first so the assessment can be deleted
+      await prisma.marksEntry.deleteMany({ where: { assessmentId: id } });
+    }
+
+    await prisma.assessment.delete({ where: { id } });
+    res.json({ message: 'Assessment deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAssessmentCategories,
   createAssessmentCategory,
+  updateAssessmentCategory,
+  deleteAssessmentCategory,
   getAssessments,
   createAssessment,
   updateAssessment,
+  deleteAssessment,
 };

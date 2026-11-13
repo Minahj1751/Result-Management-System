@@ -8,3 +8,7 @@ module.exports = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   nodeEnv: process.env.NODE_ENV || 'development',
 };
+
+if (module.exports.jwtSecret === 'your-jwt-secret-here' && module.exports.nodeEnv === 'production') {
+  console.warn('WARNING: JWT_SECRET is using the default value. Set a strong secret in production.');
+}

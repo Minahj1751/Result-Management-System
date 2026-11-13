@@ -15,7 +15,9 @@ const upload = multer({
         file.mimetype === 'application/vnd.ms-excel') {
       cb(null, true);
     } else {
-      cb(new Error('Only Excel files are allowed'));
+      const err = new Error('Only Excel files are allowed');
+      err.statusCode = 400;
+      cb(err);
     }
   },
 });

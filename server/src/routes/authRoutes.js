@@ -4,9 +4,12 @@ const authController = require('../controllers/authController');
 const { authenticate, isAdmin } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { loginValidation, changePasswordValidation } = require('../validators/authValidator');
+const createRateLimiter = require('../middleware/rateLimit');
+
+const loginRateLimit = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 
 // Public routes
-router.post('/login', loginValidation, validate, authController.login);
+router.post('/login', loginRateLimit, loginValidation, validate, authController.login);
 
 // Protected routes
 router.post('/logout', authenticate, authController.logout);

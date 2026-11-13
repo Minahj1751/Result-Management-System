@@ -55,10 +55,18 @@ const calculateStudentSubjectResult = async (studentId, academicSessionId, semes
         date: marksEntry?.individualDate || assessment.defaultDate,
       });
 
-      if (marksEntry && marksEntry.marksObtained !== null && marksEntry.status !== 'ABSENT' && marksEntry.status !== 'EXEMPTED') {
+      const isAbsent = marksEntry?.status === 'ABSENT';
+      const isExempt = marksEntry?.status === 'EXEMPTED' || marksEntry?.status === 'NOT_APPLICABLE';
+      const hasMarks = marksEntry && marksEntry.marksObtained !== null && marksEntry.marksObtained !== undefined;
+
+      if (isAbsent) {
+        // Absent counts as 0 obtained but the maximum still counts in the denominator
+        category.totalMaximumMarks += parseFloat(assessment.maximumMarks);
+      } else if (!isExempt && hasMarks) {
         category.totalMaximumMarks += parseFloat(assessment.maximumMarks);
         category.totalObtainedMarks += parseFloat(marksEntry.marksObtained);
       }
+      // EXEMPTED / NOT_APPLICABLE / no marks entry: excluded from both numerator and denominator
     }
 
     // Calculate category percentages and weighted marks
@@ -88,7 +96,9 @@ const calculateStudentSubjectResult = async (studentId, academicSessionId, semes
     let gradePoint = null;
 
     if (totalWeightage > 0) {
-      finalPercentage = totalWeightedMarks; // Weighted marks are already percentages
+      // Normalize by the total weightage of categories that actually have marks,
+      // so the result is correct even when weightages don't sum to exactly 100.
+      finalPercentage = (totalWeightedMarks * 100) / totalWeightage;
     }
 
     if (gradingPolicy && gradingPolicy.gradeScales.length > 0) {
@@ -219,8 +229,8 @@ const finalizeResultSnapshot = async (studentId, academicSessionId, semesterId, 
         },
       },
       update: {
-        totalMarks: calculation.totalWeightedMarks,
-        maximumMarks: calculation.totalWeightage,
+        totalMarks: Number(calculation.finalPercentage.toFixed(2)),
+        maximumMarks: 100,
         percentage: calculation.finalPercentage,
         grade: calculation.grade,
         gradePoint: calculation.gradePoint,
@@ -236,8 +246,8 @@ const finalizeResultSnapshot = async (studentId, academicSessionId, semesterId, 
         schoolClassId,
         sectionId,
         subjectId,
-        totalMarks: calculation.totalWeightedMarks,
-        maximumMarks: calculation.totalWeightage,
+        totalMarks: Number(calculation.finalPercentage.toFixed(2)),
+        maximumMarks: 100,
         percentage: calculation.finalPercentage,
         grade: calculation.grade,
         gradePoint: calculation.gradePoint,
@@ -284,9 +294,42 @@ const getResultSnapshot = async (studentId, academicSessionId, semesterId, schoo
   }
 };
 
+/**
+ * Compute overall result summary across subject snapshots for marksheets.
+ * Returns average percentage, GPA (mean of grade points), overall grade,
+ * and pass/fail status. Pass requires every graded subject to be non-fail.
+ */
+const computeOverallSummary = (snapshots) => {
+  const graded = snapshots.filter((s) => s.percentage !== null && s.percentage !== undefined);
+  if (graded.length === 0) {
+    return { averagePercentage: null, gpa: null, overallGrade: null, resultStatus: 'N/A' };
+  }
+
+  const averagePercentage =
+    graded.reduce((sum, s) => sum + parseFloat(s.percentage), 0) / graded.length;
+
+  const withGradePoint = graded.filter((s) => s.gradePoint !== null && s.gradePoint !== undefined);
+  const gpa = withGradePoint.length > 0
+    ? withGradePoint.reduce((sum, s) => sum + parseFloat(s.gradePoint), 0) / withGradePoint.length
+    : null;
+
+  // Overall grade from the active grading scale using average percentage
+  // (re-fetched by caller if needed; here we reuse the lowest/best matching grade)
+  const failed = graded.some((s) => (s.grade || '').toUpperCase() === 'F');
+  const resultStatus = failed ? 'FAIL' : 'PASS';
+
+  return {
+    averagePercentage: Number(averagePercentage.toFixed(2)),
+    gpa: gpa !== null ? Number(gpa.toFixed(2)) : null,
+    overallGrade: null, // filled by caller using grading policy if desired
+    resultStatus,
+  };
+};
+
 module.exports = {
   calculateStudentSubjectResult,
   calculateClassResults,
   finalizeResultSnapshot,
   getResultSnapshot,
+  computeOverallSummary,
 };

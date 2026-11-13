@@ -23,18 +23,24 @@ const login = async (email, password) => {
     },
   });
 
+  const authError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 401;
+    return error;
+  };
+
   if (!user) {
-    throw new Error('Invalid credentials');
+    throw authError('Invalid credentials');
   }
 
   if (!user.isActive) {
-    throw new Error('Account is deactivated');
+    throw authError('Account is deactivated');
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
   if (!isPasswordValid) {
-    throw new Error('Invalid credentials');
+    throw authError('Invalid credentials');
   }
 
   const token = generateToken(user.id);

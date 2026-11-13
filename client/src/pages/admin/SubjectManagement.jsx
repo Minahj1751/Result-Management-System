@@ -63,10 +63,10 @@ export default function SubjectManagement() {
   const handleDelete = async (subjectId) => {
     if (!confirm('Are you sure you want to delete this subject?')) return;
     try {
-      alert('Delete functionality requires backend implementation');
+      await academicAPI.deleteSubject(subjectId);
+      loadSubjects();
     } catch (error) {
-      console.error('Error deleting subject:', error);
-      alert('Error deleting subject');
+      alert(error.response?.data?.error || 'Error deleting subject');
     }
   };
 

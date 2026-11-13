@@ -14,6 +14,10 @@ export const academicAPI = {
     const response = await api.patch(`/academic/sessions/${id}`, data);
     return response.data;
   },
+  deleteSession: async (id) => {
+    const response = await api.delete(`/academic/sessions/${id}`);
+    return response.data;
+  },
 
   // Semesters
   getSemesters: async (academicSessionId) => {
@@ -22,6 +26,14 @@ export const academicAPI = {
   },
   createSemester: async (data) => {
     const response = await api.post('/academic/semesters', data);
+    return response.data;
+  },
+  updateSemester: async (id, data) => {
+    const response = await api.patch(`/academic/semesters/${id}`, data);
+    return response.data;
+  },
+  deleteSemester: async (id) => {
+    const response = await api.delete(`/academic/semesters/${id}`);
     return response.data;
   },
 
@@ -38,6 +50,10 @@ export const academicAPI = {
     const response = await api.patch(`/academic/classes/${id}`, data);
     return response.data;
   },
+  deleteClass: async (id) => {
+    const response = await api.delete(`/academic/classes/${id}`);
+    return response.data;
+  },
 
   // Sections
   getSections: async (schoolClassId) => {
@@ -46,6 +62,14 @@ export const academicAPI = {
   },
   createSection: async (data) => {
     const response = await api.post('/academic/sections', data);
+    return response.data;
+  },
+  updateSection: async (id, data) => {
+    const response = await api.patch(`/academic/sections/${id}`, data);
+    return response.data;
+  },
+  deleteSection: async (id) => {
+    const response = await api.delete(`/academic/sections/${id}`);
     return response.data;
   },
 
@@ -60,6 +84,10 @@ export const academicAPI = {
   },
   updateSubject: async (id, data) => {
     const response = await api.patch(`/academic/subjects/${id}`, data);
+    return response.data;
+  },
+  deleteSubject: async (id) => {
+    const response = await api.delete(`/academic/subjects/${id}`);
     return response.data;
   },
 

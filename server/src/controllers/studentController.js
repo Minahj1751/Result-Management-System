@@ -5,29 +5,18 @@ const prisma = require('../config/database');
  */
 const getStudents = async (req, res, next) => {
   try {
-    const { academicSessionId, semesterId, schoolClassId, sectionId, page = 1, limit = 50, search } = req.query;
+    const { academicSessionId, semesterId, schoolClassId, sectionId, page = 1, limit = 50, search, includeInactive } = req.query;
+
+    const enrollmentConditions = [];
+    if (academicSessionId) enrollmentConditions.push({ academicSessionId });
+    if (semesterId) enrollmentConditions.push({ semesterId });
+    if (schoolClassId) enrollmentConditions.push({ schoolClassId });
+    if (sectionId) enrollmentConditions.push({ sectionId });
 
     const where = {
-      isActive: true,
-      ...(academicSessionId && {
-        enrollments: {
-          some: { academicSessionId },
-        },
-      }),
-      ...(semesterId && {
-        enrollments: {
-          some: { semesterId },
-        },
-      }),
-      ...(schoolClassId && {
-        enrollments: {
-          some: { schoolClassId },
-        },
-      }),
-      ...(sectionId && {
-        enrollments: {
-          some: { sectionId },
-        },
+      ...(includeInactive !== 'true' ? { isActive: true } : {}),
+      ...(enrollmentConditions.length > 0 && {
+        enrollments: { some: { AND: enrollmentConditions } },
       }),
       ...(search && {
         OR: [
@@ -169,6 +158,11 @@ const createEnrollment = async (req, res, next) => {
   try {
     const { studentId, academicSessionId, semesterId, schoolClassId, sectionId, rollNumber } = req.body;
 
+    const roll = parseInt(rollNumber, 10);
+    if (!Number.isInteger(roll) || roll < 1) {
+      return res.status(400).json({ error: 'Roll number must be a positive integer' });
+    }
+
     const enrollment = await prisma.studentEnrollment.create({
       data: {
         studentId,
@@ -176,7 +170,7 @@ const createEnrollment = async (req, res, next) => {
         semesterId,
         schoolClassId,
         sectionId,
-        rollNumber,
+        rollNumber: roll,
         isActive: true,
       },
       include: {
@@ -205,7 +199,7 @@ const updateEnrollment = async (req, res, next) => {
     const enrollment = await prisma.studentEnrollment.update({
       where: { id },
       data: {
-        ...(rollNumber !== undefined && { rollNumber }),
+        ...(rollNumber !== undefined && { rollNumber: parseInt(rollNumber, 10) }),
         ...(isActive !== undefined && { isActive }),
       },
       include: {
@@ -223,6 +217,20 @@ const updateEnrollment = async (req, res, next) => {
   }
 };
 
+/**
+ * Delete student enrollment
+ */
+const deleteEnrollment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.studentEnrollment.delete({ where: { id } });
+    res.json({ message: 'Enrollment deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getStudents,
   createStudent,
@@ -230,4 +238,5 @@ module.exports = {
   updateStudent,
   createEnrollment,
   updateEnrollment,
+  deleteEnrollment,
 };

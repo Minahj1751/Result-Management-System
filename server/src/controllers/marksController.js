@@ -1,6 +1,39 @@
 const prisma = require('../config/database');
 
 /**
+ * Ensure the requesting teacher is assigned to the assessment's
+ * session/semester/class/section/subject. Throws an http-error on failure.
+ */
+const assertTeacherAssignedToAssessment = async (req, assessment) => {
+  const profile = req.user.teacherProfile;
+  if (!profile) {
+    const error = new Error('Teacher profile not found');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const assignment = await prisma.teacherAssignment.findFirst({
+    where: {
+      teacherId: profile.id,
+      subjectId: assessment.subjectId,
+      academicSessionId: assessment.academicSessionId,
+      semesterId: assessment.semesterId,
+      schoolClassId: assessment.schoolClassId,
+      sectionId: assessment.sectionId,
+      isActive: true,
+    },
+  });
+
+  if (!assignment) {
+    const error = new Error('You are not assigned to this class and subject');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return profile;
+};
+
+/**
  * Get marks entries
  */
 const getMarksEntries = async (req, res, next) => {
@@ -132,6 +165,8 @@ const upsertMarksEntry = async (req, res, next) => {
       return res.status(404).json({ error: 'Assessment not found' });
     }
 
+    const teacherProfile = await assertTeacherAssignedToAssessment(req, assessment);
+
     // Validate marks
     if (marksObtained !== null && marksObtained !== undefined) {
       const marks = parseFloat(marksObtained);
@@ -155,7 +190,7 @@ const upsertMarksEntry = async (req, res, next) => {
         status: status || 'PENDING',
         individualDate: individualDate ? new Date(individualDate) : null,
         remarks,
-        teacherId: req.user.teacherProfile.id,
+        teacherId: teacherProfile.id,
       },
       create: {
         studentId,
@@ -164,7 +199,7 @@ const upsertMarksEntry = async (req, res, next) => {
         status: status || 'PENDING',
         individualDate: individualDate ? new Date(individualDate) : null,
         remarks,
-        teacherId: req.user.teacherProfile.id,
+        teacherId: teacherProfile.id,
       },
       include: {
         student: true,
@@ -196,18 +231,32 @@ const bulkUpsertMarks = async (req, res, next) => {
 
     const results = [];
     const errors = [];
+    const authorizedAssessments = new Map();
+    const teacherProfile = req.user.teacherProfile;
+
+    if (!teacherProfile) {
+      return res.status(403).json({ error: 'Teacher profile not found' });
+    }
 
     for (const entry of entries) {
       try {
         const { studentId, assessmentId, marksObtained, status, individualDate, remarks } = entry;
 
         // Get assessment to validate maximum marks
-        const assessment = await prisma.assessment.findUnique({
-          where: { id: assessmentId },
-        });
+        let assessment = authorizedAssessments.get(assessmentId);
+        if (assessment === undefined) {
+          const found = await prisma.assessment.findUnique({
+            where: { id: assessmentId },
+          });
+          if (found) {
+            await assertTeacherAssignedToAssessment(req, found);
+          }
+          assessment = found || null;
+          authorizedAssessments.set(assessmentId, assessment);
+        }
 
         if (!assessment) {
-          errors.push({ entry, error: 'Assessment not found' });
+          errors.push({ entry, error: 'Assessment not found or not assigned to you' });
           continue;
         }
 
@@ -236,7 +285,7 @@ const bulkUpsertMarks = async (req, res, next) => {
             status: status || 'PENDING',
             individualDate: individualDate ? new Date(individualDate) : null,
             remarks,
-            teacherId: req.user.teacherProfile.id,
+            teacherId: teacherProfile.id,
           },
           create: {
             studentId,
@@ -245,7 +294,7 @@ const bulkUpsertMarks = async (req, res, next) => {
             status: status || 'PENDING',
             individualDate: individualDate ? new Date(individualDate) : null,
             remarks,
-            teacherId: req.user.teacherProfile.id,
+            teacherId: teacherProfile.id,
           },
           include: {
             student: true,
@@ -276,6 +325,17 @@ const bulkUpsertMarks = async (req, res, next) => {
 const deleteMarksEntry = async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    const existing = await prisma.marksEntry.findUnique({
+      where: { id },
+      include: { assessment: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Marks entry not found' });
+    }
+
+    await assertTeacherAssignedToAssessment(req, existing.assessment);
 
     await prisma.marksEntry.delete({
       where: { id },

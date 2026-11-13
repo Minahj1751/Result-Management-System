@@ -1,14 +1,111 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { teacherAPI } from '../api/teacherService';
+import { academicAPI } from '../api/academicService';
+import { assessmentAPI } from '../api/assessmentService';
+import { marksAPI } from '../api/marksService';
+import Card from '../components/Card';
+
+const getUser = () => JSON.parse(localStorage.getItem('user') || '{}');
+
 export default function TeacherDashboard() {
+  const user = getUser();
+  const teacherProfileId = user.teacherProfile?.id;
+  const [assignments, setAssignments] = useState([]);
+  const [classAssignments, setClassAssignments] = useState([]);
+  const [pendingCount, setPendingCount] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [subjectAssignments, classTeacherAssignments] = await Promise.all([
+        teacherAPI.getTeacherAssignments(),
+        teacherAPI.getClassTeacherAssignments(),
+      ]);
+      setAssignments(subjectAssignments.filter((a) => a.isActive));
+      setClassAssignments(classTeacherAssignments.filter((a) => a.isActive));
+
+      // Pending marks: assessments matching my assignments that aren't fully entered
+      if (subjectAssignments.length > 0) {
+        const first = subjectAssignments[0];
+        const assessments = await assessmentAPI.getAssessments({
+          academicSessionId: first.academicSessionId,
+          semesterId: first.semesterId,
+          schoolClassId: first.schoolClassId,
+          sectionId: first.sectionId,
+          subjectId: first.subjectId,
+        });
+        const entries = await marksAPI.getEntries({ teacherId: teacherProfileId });
+        const enteredAssessmentIds = new Set(entries.map((e) => e.assessmentId));
+        setPendingCount(assessments.filter((a) => !enteredAssessmentIds.has(a.id)).length);
+      }
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8">Loading...</div>;
+
+  const label = (a) =>
+    `${a.subject?.name || ''} — ${a.schoolClass?.name || ''} ${a.section?.name || ''} (${a.semester?.name || ''}, ${a.academicSession?.name || ''})`;
+
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Subject Teacher Dashboard</h1>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Your Assignments</h2>
-        <p className="text-gray-600">No assignments loaded yet.</p>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Teacher Dashboard</h1>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <Card className="text-center !p-4">
+          <p className="text-sm text-gray-500">Subject Assignments</p>
+          <p className="text-3xl font-bold text-blue-600 mt-1">{assignments.length}</p>
+        </Card>
+        <Card className="text-center !p-4">
+          <p className="text-sm text-gray-500">Class Teacher Of</p>
+          <p className="text-3xl font-bold text-green-600 mt-1">{classAssignments.length}</p>
+        </Card>
+        <Card className="text-center !p-4">
+          <p className="text-sm text-gray-500">Assessments Pending</p>
+          <p className="text-3xl font-bold text-orange-600 mt-1">{pendingCount ?? '-'}</p>
+        </Card>
       </div>
-      <div className="mt-6 bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Pending Actions</h2>
-        <p className="text-gray-600">No pending actions.</p>
+
+      <Card title="My Subject Assignments" className="mb-6">
+        {assignments.length === 0 ? (
+          <p className="text-gray-600">No subject assignments found.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {assignments.map((a) => (
+              <li key={a.id} className="py-2 text-sm text-gray-800">{label(a)}</li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card title="Class Teacher Assignments">
+        {classAssignments.length === 0 ? (
+          <p className="text-gray-600">No class teacher assignments found.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {classAssignments.map((a) => (
+              <li key={a.id} className="py-2 text-sm text-gray-800">
+                {a.schoolClass?.name} {a.section?.name} — {a.semester?.name} ({a.academicSession?.name})
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <div className="mt-6">
+        <Link
+          to="/teacher/marks"
+          className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+        >
+          Go to Marks Entry
+        </Link>
       </div>
     </div>
   );

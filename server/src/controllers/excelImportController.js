@@ -45,13 +45,26 @@ const previewImport = async (req, res, next) => {
  */
 const confirmImport = async (req, res, next) => {
   try {
-    const { validRows } = req.body;
-
-    if (!validRows || !Array.isArray(validRows)) {
-      return res.status(400).json({ error: 'Invalid validRows data' });
+    // Accept either { rows: [...] } or legacy { validRows: [{ data: {...} }, ...] }
+    let rows = req.body.rows;
+    if (!rows && Array.isArray(req.body.validRows)) {
+      rows = req.body.validRows.map((r) => (r && r.data ? r.data : r));
     }
 
-    const result = await excelImportService.confirmStudentImport(validRows);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid rows data' });
+    }
+
+    // Re-validate server-side to prevent importing bad/duplicate data
+    const validation = await excelImportService.validateStudentImport(rows);
+    if (validation.invalidRows.length > 0) {
+      return res.status(400).json({
+        error: `${validation.invalidRows.length} row(s) failed validation`,
+        invalidRows: validation.invalidRows,
+      });
+    }
+
+    const result = await excelImportService.confirmStudentImport(validation.validRows.map((r) => r.data));
 
     res.json(result);
   } catch (error) {

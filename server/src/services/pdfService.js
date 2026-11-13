@@ -2,6 +2,8 @@ const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
 const archiver = require('archiver');
+const prisma = require('../config/database');
+const resultCalculationService = require('./resultCalculationService');
 
 /**
  * Generate PDF from HTML template
@@ -67,14 +69,23 @@ const generateMarksheetHTML = async (data) => {
     ? `${attendance.daysAttended}/${attendance.totalWorkingDays}`
     : 'N/A';
 
+  const safeParse = (str) => {
+    try {
+      return JSON.parse(str || '{}');
+    } catch {
+      return {};
+    }
+  };
+
   // Build category headers
   const categories = {};
   snapshots.forEach((snapshot) => {
-    const jsonData = JSON.parse(snapshot.jsonData || '{}');
+    const jsonData = safeParse(snapshot.jsonData);
     if (jsonData.categoryResults) {
       Object.keys(jsonData.categoryResults).forEach((categoryCode) => {
         if (!categories[categoryCode]) {
           categories[categoryCode] = {
+            code: categoryCode,
             name: jsonData.categoryResults[categoryCode].categoryName,
             weightage: jsonData.categoryResults[categoryCode].categoryWeightage,
             assessments: [],
@@ -89,24 +100,31 @@ const generateMarksheetHTML = async (data) => {
     }
   });
 
-  const categoryHeaders = Object.values(categories)
+  const categoryList = Object.values(categories);
+  const totalAssessmentCols = categoryList.reduce((sum, c) => sum + c.assessments.length, 0);
+
+  const categoryHeaders = categoryList
     .map((cat) => `<th colspan="${cat.assessments.length}" class="category-header">${cat.name} (${cat.weightage}%)</th>`)
     .join('');
 
-  const assessmentHeaders = Object.values(categories)
+  const assessmentHeaders = categoryList
     .map((cat) => cat.assessments.map((ass) => `<th>${ass}</th>`).join(''))
     .join('');
 
   // Build subject rows
   const subjectRows = snapshots.map((snapshot) => {
-    const jsonData = JSON.parse(snapshot.jsonData || '{}');
+    const jsonData = safeParse(snapshot.jsonData);
     let marksCells = '';
 
-    Object.values(categories).forEach((cat) => {
+    categoryList.forEach((cat) => {
       cat.assessments.forEach((assessmentName) => {
         let markDisplay = '-';
-        if (jsonData.categoryResults && jsonData.categoryResults[cat.name.replace(/\s/g, '')]) {
-          const category = jsonData.categoryResults[cat.name.replace(/\s/g, '')];
+        const categoryResults = jsonData.categoryResults || {};
+        // Match by category code key first, then by category name fallback
+        const category = Object.values(categoryResults).find(
+          (c) => c.categoryName === cat.name || c.categoryCode === cat.code
+        );
+        if (category) {
           const assessment = category.assessments.find((a) => a.name === assessmentName);
           if (assessment) {
             if (assessment.status === 'ABSENT') {
@@ -115,8 +133,8 @@ const generateMarksheetHTML = async (data) => {
               markDisplay = 'E';
             } else if (assessment.status === 'NOT_APPLICABLE') {
               markDisplay = 'N/A';
-            } else if (assessment.marksObtained !== null) {
-              markDisplay = assessment.marksObtained.toFixed(schoolSettings?.decimalPrecision || 2);
+            } else if (assessment.marksObtained !== null && assessment.marksObtained !== undefined) {
+              markDisplay = Number(assessment.marksObtained).toFixed(schoolSettings?.decimalPrecision || 2);
             }
           }
         }
@@ -124,13 +142,58 @@ const generateMarksheetHTML = async (data) => {
       });
     });
 
+    const pctDisplay = snapshot.percentage !== null && snapshot.percentage !== undefined
+      ? `${Number(snapshot.percentage).toFixed(schoolSettings?.decimalPrecision || 2)}%`
+      : '-';
+    const gpDisplay = snapshot.gradePoint !== null && snapshot.gradePoint !== undefined
+      ? Number(snapshot.gradePoint).toFixed(2)
+      : '-';
+
     return `
       <tr>
         <td class="subject-name">${snapshot.subject.name}</td>
         ${marksCells}
+        <td class="result-cell">${pctDisplay}</td>
+        <td class="result-cell">${snapshot.grade || '-'}</td>
+        <td class="result-cell">${gpDisplay}</td>
       </tr>
     `;
   }).join('');
+
+  // Overall summary across subjects
+  const summary = resultCalculationService.computeOverallSummary(snapshots);
+
+  // Resolve overall grade from the active grading policy
+  let overallGrade = '';
+  if (summary.averagePercentage !== null) {
+    const policy = await prisma.gradingPolicy.findFirst({
+      where: { isActive: true },
+      include: { gradeScales: { orderBy: { minPercentage: 'desc' } } },
+    });
+    if (policy) {
+      const scale = policy.gradeScales.find(
+        (gs) => summary.averagePercentage >= parseFloat(gs.minPercentage) &&
+               summary.averagePercentage <= parseFloat(gs.maxPercentage)
+      );
+      if (scale) overallGrade = scale.grade;
+    }
+  }
+
+  const summaryHtml = summary.averagePercentage !== null ? `
+    <tr class="summary-row">
+      <td class="subject-name"><strong>Overall</strong></td>
+      <td class="result-cell" colspan="${Math.max(totalAssessmentCols - 3, 1)}"></td>
+      <td class="result-cell"><strong>${summary.averagePercentage.toFixed(schoolSettings?.decimalPrecision || 2)}%</strong></td>
+      <td class="result-cell"><strong>${overallGrade || '-'}</strong></td>
+      <td class="result-cell"><strong>${summary.gpa !== null ? summary.gpa.toFixed(2) : '-'}</strong></td>
+    </tr>
+    <tr class="status-row">
+      <td colspan="${totalAssessmentCols + 4}" class="status-cell">
+        Result: <strong>${summary.resultStatus}</strong>
+        ${summary.gpa !== null ? ` &nbsp;|&nbsp; GPA: <strong>${summary.gpa.toFixed(2)}</strong>` : ''}
+      </td>
+    </tr>
+  ` : '';
 
   let html = await fs.readFile(
     path.join(__dirname, '../templates/marksheet/template.html'),
@@ -153,6 +216,8 @@ const generateMarksheetHTML = async (data) => {
   html = html.replace('{{CATEGORY_HEADERS}}', categoryHeaders);
   html = html.replace('{{ASSESSMENT_HEADERS}}', assessmentHeaders);
   html = html.replace('{{SUBJECT_ROWS}}', subjectRows);
+  html = html.replace('{{SUMMARY_ROWS}}', summaryHtml);
+  html = html.replace('{{STUDENT_ID}}', student?.studentId || '');
   html = html.replace('{{PRINCIPAL_SIGNATURE}}', schoolSettings?.principalSignature || 'Principal');
   html = html.replace('{{CLASS_TEACHER_SIGNATURE}}', schoolSettings?.classTeacherSignature || 'Class Teacher');
 

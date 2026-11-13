@@ -14,7 +14,9 @@ export default function SessionManagement() {
   const [isSessionModalOpen, setIsSessionModalOpen] = useState(false);
   const [isSemesterModalOpen, setIsSemesterModalOpen] = useState(false);
   const [isEditSession, setIsEditSession] = useState(false);
+  const [isEditSemester, setIsEditSemester] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingSemesterId, setEditingSemesterId] = useState(null);
   const [sessionForm, setSessionForm] = useState({ name: '', startDate: '', endDate: '', isActive: true });
   const [semesterForm, setSemesterForm] = useState({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true });
 
@@ -65,13 +67,52 @@ export default function SessionManagement() {
   const handleSemesterSubmit = async (e) => {
     e.preventDefault();
     try {
-      await academicAPI.createSemester(semesterForm);
+      if (isEditSemester) {
+        await academicAPI.updateSemester(editingSemesterId, semesterForm);
+      } else {
+        await academicAPI.createSemester(semesterForm);
+      }
       setIsSemesterModalOpen(false);
       setSemesterForm({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true });
+      setIsEditSemester(false);
+      setEditingSemesterId(null);
       loadSemesters(semesterForm.academicSessionId);
     } catch (error) {
       console.error('Error saving semester:', error);
-      alert('Error saving semester');
+      alert(error.response?.data?.error || 'Error saving semester');
+    }
+  };
+
+  const handleEditSemester = (semester) => {
+    setSemesterForm({
+      name: semester.name,
+      academicSessionId: semester.academicSessionId,
+      startDate: semester.startDate.split('T')[0],
+      endDate: semester.endDate.split('T')[0],
+      isActive: semester.isActive,
+    });
+    setEditingSemesterId(semester.id);
+    setIsEditSemester(true);
+    setIsSemesterModalOpen(true);
+  };
+
+  const handleDeleteSession = async (session) => {
+    if (!confirm(`Delete session "${session.name}"? This only works if it has no semesters, enrollments, or assessments.`)) return;
+    try {
+      await academicAPI.deleteSession(session.id);
+      loadSessions();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error deleting session');
+    }
+  };
+
+  const handleDeleteSemester = async (semester) => {
+    if (!confirm(`Delete semester "${semester.name}"?`)) return;
+    try {
+      await academicAPI.deleteSemester(semester.id);
+      loadSemesters(semester.academicSessionId);
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error deleting semester');
     }
   };
 
@@ -121,6 +162,9 @@ export default function SessionManagement() {
           <Button size="sm" variant="secondary" onClick={() => handleToggleSessionStatus(row)}>
             {row.isActive ? 'Deactivate' : 'Activate'}
           </Button>
+          <Button size="sm" variant="danger" onClick={() => handleDeleteSession(row)}>
+            Delete
+          </Button>
         </div>
       ),
     },
@@ -137,6 +181,16 @@ export default function SessionManagement() {
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${val ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
           {val ? 'Active' : 'Inactive'}
         </span>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (val, row) => (
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => handleEditSemester(row)}>Edit</Button>
+          <Button size="sm" variant="danger" onClick={() => handleDeleteSemester(row)}>Delete</Button>
+        </div>
       ),
     },
   ];
@@ -225,7 +279,7 @@ export default function SessionManagement() {
       </Modal>
 
       {/* Semester Modal */}
-      <Modal isOpen={isSemesterModalOpen} onClose={() => setIsSemesterModalOpen(false)} title="Add Semester">
+      <Modal isOpen={isSemesterModalOpen} onClose={() => setIsSemesterModalOpen(false)} title={isEditSemester ? 'Edit Semester' : 'Add Semester'}>
         <form onSubmit={handleSemesterSubmit} className="space-y-4">
           <Select
             label="Session"
@@ -233,6 +287,7 @@ export default function SessionManagement() {
             onChange={(e) => setSemesterForm({ ...semesterForm, academicSessionId: e.target.value })}
             options={sessions.map((s) => ({ value: s.id, label: s.name }))}
             required
+            disabled={isEditSemester}
           />
           <Input
             label="Semester Name"
@@ -271,7 +326,7 @@ export default function SessionManagement() {
             <Button variant="secondary" onClick={() => setIsSemesterModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">Save</Button>
+            <Button type="submit">{isEditSemester ? 'Update' : 'Save'}</Button>
           </div>
         </form>
       </Modal>

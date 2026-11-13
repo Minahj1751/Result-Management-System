@@ -228,14 +228,39 @@ const validateStudentImport = async (rows) => {
 
 /**
  * Confirm student import
+ * Accepts an array of raw row data objects (header-name keyed).
+ * Lookup maps are rebuilt server-side — clients cannot send Maps via JSON.
  */
-const confirmStudentImport = async (validRows) => {
+const confirmStudentImport = async (rows) => {
   const importedStudents = [];
   const errors = [];
 
-  for (const row of validRows) {
+  // Rebuild lookup maps from the database
+  const academicSessions = await prisma.academicSession.findMany({
+    select: { id: true, name: true },
+  });
+  const sessionMap = new Map(academicSessions.map((s) => [s.name, s.id]));
+
+  const semesters = await prisma.semester.findMany({
+    select: { id: true, name: true },
+  });
+  const semesterMap = new Map(semesters.map((s) => [s.name, s.id]));
+
+  const classes = await prisma.schoolClass.findMany({
+    select: { id: true, name: true },
+  });
+  const classMap = new Map(classes.map((c) => [c.name, c.id]));
+
+  const sections = await prisma.section.findMany({
+    select: { id: true, name: true, schoolClassId: true },
+  });
+  const sectionMap = new Map();
+  sections.forEach((s) => {
+    sectionMap.set(`${s.schoolClassId}-${s.name}`, s.id);
+  });
+
+  for (const data of rows) {
     try {
-      const { data, sessionMap, semesterMap, classMap, sectionMap } = row;
 
       // Create student
       const student = await prisma.student.create({
@@ -290,7 +315,7 @@ const confirmStudentImport = async (validRows) => {
       importedStudents.push(student);
     } catch (error) {
       errors.push({
-        data: row.data,
+        data,
         error: error.message,
       });
     }

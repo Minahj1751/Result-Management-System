@@ -103,11 +103,17 @@ const getTeacherById = async (req, res, next) => {
 const updateTeacher = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fullName, employeeId, phone, designation, dateOfBirth, address } = req.body;
+    const { fullName, employeeId, phone, designation, dateOfBirth, address, isActive, email, role } = req.body;
+
+    const userUpdate = {};
+    if (email) userUpdate.email = email.toLowerCase();
+    if (role && ['SUBJECT_TEACHER', 'CLASS_TEACHER'].includes(role)) userUpdate.role = role;
+    if (isActive !== undefined) userUpdate.isActive = Boolean(isActive);
 
     const teacher = await prisma.user.update({
       where: { id },
       data: {
+        ...userUpdate,
         teacherProfile: {
           update: {
             ...(fullName && { fullName }),
@@ -139,8 +145,13 @@ const getTeacherAssignments = async (req, res, next) => {
   try {
     const { teacherId, academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
 
+    // Non-admin teachers can only see their own assignments
+    const effectiveTeacherId = req.user.role === 'ADMIN'
+      ? teacherId
+      : (req.user.teacherProfile?.id || '__none__');
+
     const where = {
-      ...(teacherId && { teacherId }),
+      teacherId: effectiveTeacherId,
       ...(academicSessionId && { academicSessionId }),
       ...(semesterId && { semesterId }),
       ...(schoolClassId && { schoolClassId }),
@@ -244,14 +255,33 @@ const updateTeacherAssignment = async (req, res, next) => {
 };
 
 /**
+ * Delete teacher assignment
+ */
+const deleteTeacherAssignment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.teacherAssignment.delete({ where: { id } });
+    res.json({ message: 'Teacher assignment deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get class teacher assignments
  */
 const getClassTeacherAssignments = async (req, res, next) => {
   try {
     const { teacherId, academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
 
+    // Non-admin teachers can only see their own assignments
+    const effectiveTeacherId = req.user.role === 'ADMIN'
+      ? teacherId
+      : (req.user.teacherProfile?.id || '__none__');
+
     const where = {
-      ...(teacherId && { teacherId }),
+      teacherId: effectiveTeacherId,
       ...(academicSessionId && { academicSessionId }),
       ...(semesterId && { semesterId }),
       ...(schoolClassId && { schoolClassId }),
@@ -350,6 +380,20 @@ const updateClassTeacherAssignment = async (req, res, next) => {
   }
 };
 
+/**
+ * Delete class teacher assignment
+ */
+const deleteClassTeacherAssignment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.classTeacherAssignment.delete({ where: { id } });
+    res.json({ message: 'Class teacher assignment deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getTeachers,
   createTeacher,
@@ -361,4 +405,6 @@ module.exports = {
   getClassTeacherAssignments,
   createClassTeacherAssignment,
   updateClassTeacherAssignment,
+  deleteClassTeacherAssignment,
+  deleteTeacherAssignment,
 };
