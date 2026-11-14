@@ -20,6 +20,7 @@ router.delete('/assignments/:id', authenticate, isAdmin, idParamValidation, vali
 // Class Teacher Assignments
 router.get('/class-teacher-assignments', authenticate, teacherController.getClassTeacherAssignments);
 router.post('/class-teacher-assignments', authenticate, isAdmin, createClassTeacherAssignmentValidation, validate, teacherController.createClassTeacherAssignment);
+router.post('/class-teacher-assignments/bulk', authenticate, isAdmin, teacherController.bulkCreateClassTeacherAssignments);
 router.patch('/class-teacher-assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.updateClassTeacherAssignment);
 router.delete('/class-teacher-assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.deleteClassTeacherAssignment);
 

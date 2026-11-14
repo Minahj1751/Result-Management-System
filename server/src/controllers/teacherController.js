@@ -436,6 +436,139 @@ const deleteTeacherAssignment = async (req, res, next) => {
 };
 
 /**
+ * Bulk create class teacher assignments (one teacher per class-section pair).
+ * Body: { academicSessionId, semesterId, startDate, endDate?,
+ *         entries: [{ teacherId, schoolClassId, sectionId }] }
+ * Skips combinations that already exist.
+ */
+const bulkCreateClassTeacherAssignments = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, startDate, endDate, entries } = req.body;
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: 'entries must be a non-empty array' });
+    }
+    if (entries.length > 500) {
+      return res.status(400).json({ error: 'Too many entries (max 500)' });
+    }
+
+    const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
+    if (!semester || semester.academicSessionId !== academicSessionId) {
+      return res.status(400).json({ error: 'Semester does not belong to the selected session' });
+    }
+
+    const teacherIds = [...new Set(entries.map((e) => e.teacherId))];
+    const classIds = [...new Set(entries.map((e) => e.schoolClassId))];
+    const [teachers, classes, sections] = await Promise.all([
+      prisma.teacherProfile.findMany({ where: { id: { in: teacherIds } }, select: { id: true } }),
+      prisma.schoolClass.findMany({ where: { id: { in: classIds } }, select: { id: true } }),
+      prisma.section.findMany({ where: { schoolClassId: { in: classIds } }, select: { id: true, schoolClassId: true } }),
+    ]);
+    const validTeacherIds = new Set(teachers.map((t) => t.id));
+    const validClassIds = new Set(classes.map((c) => c.id));
+    const validSectionKeys = new Set(sections.map((s) => `${s.schoolClassId}:${s.id}`));
+
+    const seen = new Set();
+    const validEntries = [];
+    const invalid = [];
+    for (const entry of entries) {
+      const { teacherId, schoolClassId, sectionId } = entry;
+      const key = `${teacherId}:${schoolClassId}:${sectionId}`;
+      if (seen.has(key)) {
+        invalid.push({ ...entry, reason: 'Duplicate in request' });
+        continue;
+      }
+      seen.add(key);
+      if (!teacherId) invalid.push({ ...entry, reason: 'Teacher is required' });
+      else if (!validTeacherIds.has(teacherId)) invalid.push({ ...entry, reason: 'Invalid teacher' });
+      else if (!validClassIds.has(schoolClassId)) invalid.push({ ...entry, reason: 'Invalid class' });
+      else if (!validSectionKeys.has(`${schoolClassId}:${sectionId}`)) invalid.push({ ...entry, reason: 'Section does not belong to class' });
+      else validEntries.push({ teacherId, schoolClassId, sectionId });
+    }
+
+    // Fetch all existing assignments for the selected pairs in this session/semester
+    const pairConditions = [...new Set(validEntries.map((e) => `${e.schoolClassId}:${e.sectionId}`))].map((key) => {
+      const [schoolClassId, sectionId] = key.split(':');
+      return { schoolClassId, sectionId };
+    });
+    const existing = await prisma.classTeacherAssignment.findMany({
+      where: {
+        academicSessionId,
+        semesterId,
+        OR: pairConditions,
+      },
+    });
+    const existingByPair = new Map();
+    for (const row of existing) {
+      const key = `${row.schoolClassId}:${row.sectionId}`;
+      if (!existingByPair.has(key)) existingByPair.set(key, []);
+      existingByPair.get(key).push(row);
+    }
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    for (const entry of validEntries) {
+      const pairKey = `${entry.schoolClassId}:${entry.sectionId}`;
+      const rows = existingByPair.get(pairKey) || [];
+
+      // Already assigned to this teacher and active -> skip
+      if (rows.some((r) => r.isActive && r.teacherId === entry.teacherId)) {
+        skippedCount++;
+        continue;
+      }
+
+      // Deactivate any other active class teacher(s) for this pair
+      for (const row of rows) {
+        if (row.isActive && row.teacherId !== entry.teacherId) {
+          await prisma.classTeacherAssignment.update({
+            where: { id: row.id },
+            data: { isActive: false },
+          });
+          row.isActive = false;
+        }
+      }
+
+      // Reactivate an inactive row for the same teacher if present, else create
+      const inactiveSame = rows.find((r) => !r.isActive && r.teacherId === entry.teacherId);
+      if (inactiveSame) {
+        await prisma.classTeacherAssignment.update({
+          where: { id: inactiveSame.id },
+          data: {
+            isActive: true,
+            startDate: new Date(startDate),
+            endDate: endDate ? new Date(endDate) : null,
+          },
+        });
+      } else {
+        await prisma.classTeacherAssignment.create({
+          data: {
+            teacherId: entry.teacherId,
+            academicSessionId,
+            semesterId,
+            schoolClassId: entry.schoolClassId,
+            sectionId: entry.sectionId,
+            startDate: new Date(startDate),
+            endDate: endDate ? new Date(endDate) : null,
+            isActive: true,
+          },
+        });
+      }
+      createdCount++;
+    }
+
+    res.status(201).json({
+      created: createdCount,
+      skipped: skippedCount,
+      invalid: invalid.length,
+      invalidDetails: invalid,
+      total: entries.length,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Get class teacher assignments
  */
 const getClassTeacherAssignments = async (req, res, next) => {
@@ -573,6 +706,7 @@ module.exports = {
   updateTeacherAssignment,
   getClassTeacherAssignments,
   createClassTeacherAssignment,
+  bulkCreateClassTeacherAssignments,
   updateClassTeacherAssignment,
   deleteClassTeacherAssignment,
   deleteTeacherAssignment,

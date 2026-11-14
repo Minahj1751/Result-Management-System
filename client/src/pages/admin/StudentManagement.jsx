@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { studentAPI } from '../../api/studentService';
 import { academicAPI } from '../../api/academicService';
 import { exportAPI } from '../../api/exportService';
+import { importAPI } from '../../api/importService';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
@@ -34,6 +35,11 @@ export default function StudentManagement() {
   const [enrollmentForm, setEnrollmentForm] = useState(emptyEnrollment);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkConfirm, setBulkConfirm] = useState(null); // 'activate' | 'deactivate'
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
 
   useEffect(() => { loadInitial(); }, []);
   useEffect(() => { loadData(1); }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId]);
@@ -176,6 +182,46 @@ export default function StudentManagement() {
     }
   };
 
+  const resetImport = () => {
+    setIsImportModalOpen(false);
+    setImportFile(null);
+    setImportPreview(null);
+    setImportMessage('');
+    setImportLoading(false);
+  };
+
+  const handleImportPreview = async () => {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportMessage('');
+    try {
+      const data = await importAPI.preview(importFile);
+      setImportPreview(data);
+    } catch (error) {
+      setImportMessage(error.response?.data?.error || 'Error reading file');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importPreview?.validation?.validRows?.length) return;
+    setImportLoading(true);
+    setImportMessage('');
+    try {
+      const rows = importPreview.validation.validRows.map((r) => r.data);
+      const data = await importAPI.confirm(rows);
+      setImportMessage(`Import completed: ${data.importedCount} imported, ${data.failedCount} failed`);
+      setImportPreview(null);
+      setImportFile(null);
+      loadData(1);
+    } catch (error) {
+      setImportMessage(error.response?.data?.error || 'Import failed');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const handleExport = async () => {
     try {
       await exportAPI.students(cleanParams({
@@ -259,7 +305,12 @@ export default function StudentManagement() {
         </div>
       </Card>
 
-      <Card title="Students" actions={<Button onClick={() => { setIsEdit(false); setFormData(emptyStudent); setIsModalOpen(true); }}>Add Student</Button>}>
+      <Card title="Students" actions={
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => { resetImport(); setIsImportModalOpen(true); }}>Import</Button>
+          <Button onClick={() => { setIsEdit(false); setFormData(emptyStudent); setIsModalOpen(true); }}>Add Student</Button>
+        </div>
+      }>
         {loading ? <div className="text-center py-8">Loading...</div> : (
           <>
             <div className="mb-3 flex items-center gap-3">
@@ -337,6 +388,54 @@ export default function StudentManagement() {
             <Button type="submit">Enroll</Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={isImportModalOpen} onClose={resetImport} title="Import Students from Excel">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+          {importMessage && (
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">{importMessage}</div>
+          )}
+          <div>
+            <h3 className="text-sm font-medium text-gray-900 mb-1">Step 1: Download Template</h3>
+            <p className="text-xs text-gray-500 mb-2">Download the Excel template and fill it with student data.</p>
+            <Button size="sm" variant="secondary" onClick={() => importAPI.downloadTemplate()}>Download Template</Button>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-gray-900 mb-1">Step 2: Upload File</h3>
+            <input type="file" accept=".xlsx,.xls" onChange={(e) => { setImportFile(e.target.files[0] || null); setImportPreview(null); setImportMessage(''); }}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+          </div>
+          {importFile && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-900 mb-1">Step 3: Preview</h3>
+              <Button size="sm" onClick={handleImportPreview} disabled={importLoading}>{importLoading ? 'Loading...' : 'Preview Import'}</Button>
+            </div>
+          )}
+          {importPreview && (
+            <div className="space-y-3 border-t pt-3">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-blue-50 p-3 rounded"><p className="text-xs text-gray-600">Total Rows</p><p className="text-xl font-bold text-blue-600">{importPreview.validation.totalRows}</p></div>
+                <div className="bg-green-50 p-3 rounded"><p className="text-xs text-gray-600">Valid Rows</p><p className="text-xl font-bold text-green-600">{importPreview.validation.validRows.length}</p></div>
+                <div className="bg-red-50 p-3 rounded"><p className="text-xs text-gray-600">Invalid Rows</p><p className="text-xl font-bold text-red-600">{importPreview.validation.invalidRows.length}</p></div>
+              </div>
+              {importPreview.validation.invalidRows.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">Invalid Rows:</h4>
+                  <div className="max-h-40 overflow-y-auto">
+                    {importPreview.validation.invalidRows.map((row, idx) => (
+                      <div key={idx} className="text-xs text-red-600 mb-1">Row {row.rowNumber}: {row.errors.join(', ')}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {importPreview.validation.validRows.length > 0 && (
+                <div className="flex justify-end">
+                  <Button onClick={handleConfirmImport} disabled={importLoading}>{importLoading ? 'Importing...' : 'Confirm Import'}</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
     </div>
   );

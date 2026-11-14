@@ -38,10 +38,12 @@ export default function TeacherManagement() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isClassAssignModalOpen, setIsClassAssignModalOpen] = useState(false);
   const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
+  const [isBulkClassAssignOpen, setIsBulkClassAssignOpen] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [assignmentForm, setAssignmentForm] = useState(emptyAssignment);
   const [classAssignmentForm, setClassAssignmentForm] = useState(emptyClassAssignment);
   const [bulkAssignmentForm, setBulkAssignmentForm] = useState(emptyBulkAssignment);
+  const [bulkClassForm, setBulkClassForm] = useState({ academicSessionId: '', semesterId: '', startDate: new Date().toISOString().split('T')[0], selections: {} });
   const [bulkResult, setBulkResult] = useState(null);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -263,6 +265,62 @@ export default function TeacherManagement() {
     }))
   );
 
+  // All class-section pairs for bulk class teacher assignment
+  const classSectionPairs = classes.flatMap((cls) =>
+    allSections.filter((s) => s.schoolClassId === cls.id).map((sec) => ({
+      key: `${cls.id}:${sec.id}`,
+      schoolClassId: cls.id,
+      sectionId: sec.id,
+      label: `${cls.name} - ${sec.name}`,
+    }))
+  );
+
+  // Currently active class teacher per pair for the selected session/semester
+  const currentClassTeacherByPair = {};
+  classAssignments.forEach((a) => {
+    if (a.isActive && a.academicSessionId === bulkClassForm.academicSessionId && a.semesterId === bulkClassForm.semesterId) {
+      currentClassTeacherByPair[`${a.schoolClassId}:${a.sectionId}`] = a.teacherId;
+    }
+  });
+
+  const teacherOptions = teachers.filter((t) => t.teacherProfile).map((t) => ({
+    value: t.teacherProfile.id,
+    label: `${t.teacherProfile.fullName} (${t.email})`,
+  }));
+
+  const openBulkClassAssign = () => {
+    setBulkClassForm({ academicSessionId: '', semesterId: '', startDate: new Date().toISOString().split('T')[0], selections: {} });
+    setIsBulkClassAssignOpen(true);
+  };
+
+  const handleBulkClassAssignSubmit = async (e) => {
+    e.preventDefault();
+    const entries = classSectionPairs
+      .map((p) => ({
+        teacherId: bulkClassForm.selections[p.key] || currentClassTeacherByPair[p.key] || '',
+        schoolClassId: p.schoolClassId,
+        sectionId: p.sectionId,
+      }))
+      .filter((en) => en.teacherId);
+    if (entries.length === 0) {
+      alert('Select a teacher for at least one class');
+      return;
+    }
+    try {
+      const result = await teacherAPI.bulkCreateClassTeacherAssignments({
+        academicSessionId: bulkClassForm.academicSessionId,
+        semesterId: bulkClassForm.semesterId,
+        startDate: bulkClassForm.startDate,
+        entries,
+      });
+      setBulkResult(result);
+      setIsBulkClassAssignOpen(false);
+      reloadAll();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error creating assignments');
+    }
+  };
+
   const handleBulkAssignSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -481,7 +539,12 @@ export default function TeacherManagement() {
         <Table columns={assignmentColumns} data={subjectAssignments} emptyMessage="No assignments" />
       </Card>
 
-      <Card title="Class Teacher Assignments" actions={<Button onClick={() => { setClassAssignmentForm(emptyClassAssignment); setIsClassAssignModalOpen(true); }}>Assign Class Teacher</Button>}>
+      <Card title="Class Teacher Assignments" actions={
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={openBulkClassAssign}>Assign All Classes</Button>
+          <Button onClick={() => { setClassAssignmentForm(emptyClassAssignment); setIsClassAssignModalOpen(true); }}>Assign Class Teacher</Button>
+        </div>
+      }>
         <Table columns={classAssignmentColumns} data={classAssignments} emptyMessage="No class teacher assignments" />
       </Card>
 
@@ -592,6 +655,46 @@ export default function TeacherManagement() {
             </div>
           )}
         </div>
+      </Modal>
+
+      <Modal isOpen={isBulkClassAssignOpen} onClose={() => setIsBulkClassAssignOpen(false)} title="Assign Class Teachers to All Classes">
+        <form onSubmit={handleBulkClassAssignSubmit} className="space-y-4">
+          <Select label="Session" value={bulkClassForm.academicSessionId} required
+            onChange={async (e) => { setBulkClassForm({ ...bulkClassForm, academicSessionId: e.target.value, semesterId: '', selections: {} }); await loadSemesters(e.target.value); }}
+            options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
+          <Select label="Semester" value={bulkClassForm.semesterId} required
+            onChange={(e) => setBulkClassForm({ ...bulkClassForm, semesterId: e.target.value })}
+            options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
+          <Input label="Start Date" type="date" value={bulkClassForm.startDate} required
+            onChange={(e) => setBulkClassForm({ ...bulkClassForm, startDate: e.target.value })} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Class Teachers</label>
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-2">
+              {classSectionPairs.length === 0 && (
+                <p className="text-sm text-gray-500">No classes/sections found. Create classes and sections first.</p>
+              )}
+              {classSectionPairs.map((p) => (
+                <div key={p.key} className="flex items-center gap-3">
+                  <span className="w-32 shrink-0 text-sm text-gray-700">{p.label}</span>
+                  <Select
+                    value={bulkClassForm.selections[p.key] || currentClassTeacherByPair[p.key] || ''}
+                    onChange={(e) => setBulkClassForm({ ...bulkClassForm, selections: { ...bulkClassForm.selections, [p.key]: e.target.value } })}
+                    options={teacherOptions}
+                    placeholder="— Select teacher —"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Selecting a different teacher replaces the current class teacher for that class-section.
+            Pairs left unchanged keep their existing teacher.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsBulkClassAssignOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={!bulkClassForm.academicSessionId || !bulkClassForm.semesterId}>Assign</Button>
+          </div>
+        </form>
       </Modal>
 
       <ConfirmDialog

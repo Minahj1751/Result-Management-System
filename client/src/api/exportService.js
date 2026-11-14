@@ -20,6 +20,10 @@ export const exportAPI = {
     const response = await api.get('/export/teachers', { params, responseType: 'blob' });
     downloadBlob(response.data, `teachers_export_${Date.now()}.xlsx`);
   },
+  subjects: async () => {
+    const response = await api.get('/export/subjects', { responseType: 'blob' });
+    downloadBlob(response.data, `subjects_export_${Date.now()}.xlsx`);
+  },
   attendance: async (params = {}) => {
     const response = await api.get('/export/attendance', { params, responseType: 'blob' });
     downloadBlob(response.data, `attendance_export_${Date.now()}.xlsx`);

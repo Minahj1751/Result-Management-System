@@ -2,6 +2,13 @@ const ExcelJS = require('exceljs');
 const bcrypt = require('bcrypt');
 const prisma = require('../config/database');
 
+const str = (v) => (v === undefined || v === null ? '' : String(v).trim());
+const toDate = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 /**
  * Generate Excel template for student import
  */
@@ -12,16 +19,16 @@ const generateStudentTemplate = async () => {
   // Define columns
   worksheet.columns = [
     { header: 'Student ID*', key: 'studentId', width: 20 },
-    { header: 'Admission Number', key: 'admissionNumber', width: 20 },
     { header: 'Full Name*', key: 'fullName', width: 30 },
+    { header: 'Admission Number', key: 'admissionNumber', width: 20 },
     { header: 'Date of Birth', key: 'dateOfBirth', width: 15 },
     { header: 'Guardian Name', key: 'guardianName', width: 25 },
     { header: 'Guardian Phone', key: 'guardianPhone', width: 15 },
-    { header: 'Class*', key: 'className', width: 15 },
-    { header: 'Section*', key: 'sectionName', width: 10 },
-    { header: 'Roll Number*', key: 'rollNumber', width: 12 },
-    { header: 'Academic Session*', key: 'academicSession', width: 20 },
-    { header: 'Semester*', key: 'semester', width: 15 },
+    { header: 'Class', key: 'className', width: 15 },
+    { header: 'Section', key: 'sectionName', width: 10 },
+    { header: 'Roll Number', key: 'rollNumber', width: 12 },
+    { header: 'Academic Session', key: 'academicSession', width: 20 },
+    { header: 'Semester', key: 'semester', width: 15 },
   ];
 
   // Add sample data
@@ -96,45 +103,64 @@ const parseStudentExcel = async (buffer) => {
   return { headers, rows };
 };
 
+const extractStudentRow = (row) => ({
+  studentId: str(cell(row, 'Student ID')),
+  fullName: str(cell(row, 'Full Name')),
+  admissionNumber: str(cell(row, 'Admission Number')) || str(cell(row, 'Admission No')),
+  dateOfBirth: cell(row, 'Date of Birth'),
+  guardianName: str(cell(row, 'Guardian Name')) || str(cell(row, 'Guardian')),
+  guardianPhone: str(cell(row, 'Guardian Phone')) || str(cell(row, 'Phone')),
+  className: str(cell(row, 'Class')),
+  sectionName: str(cell(row, 'Section')),
+  rollRaw: cell(row, 'Roll Number') ?? cell(row, 'Roll'),
+  sessionName: str(cell(row, 'Academic Session')) || str(cell(row, 'Session')),
+  semesterName: str(cell(row, 'Semester')),
+  status: str(cell(row, 'Status')),
+});
+
+const hasEnrollmentData = (r) =>
+  [r.sessionName, r.semesterName, r.className, r.sectionName, str(r.rollRaw)].some((v) => v !== '');
+
 /**
- * Validate student import data
+ * Validate student import data.
+ * Supports two row shapes:
+ *  - Profile only: Student ID, Full Name (+ optional Admission No, DOB, Guardian, Phone, Status)
+ *  - With enrollment: also Class, Section, Roll Number, Academic Session, Semester
+ * Existing Student IDs are updated (upsert) instead of rejected.
  */
 const validateStudentImport = async (rows) => {
   const validRows = [];
   const invalidRows = [];
   const duplicateStudentIds = new Set();
-  const seenStudentIds = new Set();
+  const seenRowKeys = new Set();
 
-  // Get existing data for validation
   const existingStudents = await prisma.student.findMany({
-    select: { studentId: true, admissionNumber: true },
+    select: { id: true, studentId: true, admissionNumber: true },
   });
-
   const existingStudentIds = new Set(existingStudents.map((s) => s.studentId));
-  const existingAdmissionNumbers = new Set(existingStudents.map((s) => s.admissionNumber).filter(Boolean));
+  const studentIdOwner = new Map(existingStudents.map((s) => [s.studentId, s]));
+  const admissionOwner = new Map(
+    existingStudents.filter((s) => s.admissionNumber).map((s) => [s.admissionNumber, s])
+  );
 
   const academicSessions = await prisma.academicSession.findMany({
     select: { id: true, name: true },
   });
-
   const sessionMap = new Map(academicSessions.map((s) => [s.name, s.id]));
 
   const semesters = await prisma.semester.findMany({
     select: { id: true, name: true },
   });
-
   const semesterMap = new Map(semesters.map((s) => [s.name, s.id]));
 
   const classes = await prisma.schoolClass.findMany({
     select: { id: true, name: true },
   });
-
   const classMap = new Map(classes.map((c) => [c.name, c.id]));
 
   const sections = await prisma.section.findMany({
     select: { id: true, name: true, schoolClassId: true },
   });
-
   const sectionMap = new Map();
   sections.forEach((s) => {
     sectionMap.set(`${s.schoolClassId}-${s.name}`, s.id);
@@ -142,64 +168,65 @@ const validateStudentImport = async (rows) => {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
+    const r = extractStudentRow(row);
     const errors = [];
 
-    // Required fields
-    if (!row['Student ID*'] || !row['Student ID*'].trim()) {
+    if (!r.studentId) {
       errors.push('Student ID is required');
-    } else if (seenStudentIds.has(row['Student ID*'])) {
-      errors.push('Duplicate Student ID in file');
-      duplicateStudentIds.add(row['Student ID*']);
-    } else if (existingStudentIds.has(row['Student ID*'])) {
-      errors.push('Student ID already exists in database');
-    } else {
-      seenStudentIds.add(row['Student ID*']);
     }
 
-    if (!row['Full Name*'] || !row['Full Name*'].trim()) {
+    if (!r.fullName) {
       errors.push('Full Name is required');
     }
 
-    if (!row['Class*'] || !row['Class*'].trim()) {
-      errors.push('Class is required');
+    if (r.admissionNumber) {
+      const owner = admissionOwner.get(r.admissionNumber);
+      if (owner && owner.studentId !== r.studentId) {
+        errors.push('Admission Number already exists');
+      }
     }
 
-    if (!row['Section*'] || !row['Section*'].trim()) {
-      errors.push('Section is required');
-    }
-
-    if (!row['Roll Number*'] || isNaN(row['Roll Number*'])) {
-      errors.push('Valid Roll Number is required');
-    }
-
-    if (!row['Academic Session*'] || !row['Academic Session*'].trim()) {
-      errors.push('Academic Session is required');
-    }
-
-    if (!row['Semester*'] || !row['Semester*'].trim()) {
-      errors.push('Semester is required');
-    }
-
-    // Validate references
-    if (row['Academic Session*'] && !sessionMap.has(row['Academic Session*'])) {
-      errors.push('Invalid Academic Session');
-    }
-
-    if (row['Semester*'] && !semesterMap.has(row['Semester*'])) {
-      errors.push('Invalid Semester');
-    }
-
-    if (row['Class*'] && !classMap.has(row['Class*'])) {
-      errors.push('Invalid Class');
-    }
-
-    if (row['Admission Number'] && existingAdmissionNumbers.has(row['Admission Number'])) {
-      errors.push('Admission Number already exists');
-    }
-
-    // Validate phone number if provided
-    if (row['Guardian Phone'] && !/^\+?[0-9]{10,15}$/.test(row['Guardian Phone'].replace(/[\s-]/g, ''))) {
+    if (r.guardianPhone && !/^\+?[0-9]{10,15}$/.test(r.guardianPhone.replace(/[\s-]/g, ''))) {
       errors.push('Invalid Guardian Phone number');
+    }
+
+    if (r.dateOfBirth && !toDate(r.dateOfBirth)) {
+      errors.push('Invalid Date of Birth');
+    }
+
+    const enrollment = hasEnrollmentData(r);
+    let enrollmentKey = '';
+    if (enrollment) {
+      for (const [label, value] of [
+        ['Academic Session', r.sessionName],
+        ['Semester', r.semesterName],
+        ['Class', r.className],
+        ['Section', r.sectionName],
+      ]) {
+        if (!value) errors.push(`${label} is required when enrolling`);
+      }
+      if (!str(r.rollRaw) || !Number.isInteger(Number(r.rollRaw)) || Number(r.rollRaw) < 1) {
+        errors.push('Valid Roll Number is required when enrolling');
+      }
+      if (r.sessionName && !sessionMap.has(r.sessionName)) errors.push('Invalid Academic Session');
+      if (r.semesterName && !semesterMap.has(r.semesterName)) errors.push('Invalid Semester');
+      if (r.className && !classMap.has(r.className)) errors.push('Invalid Class');
+      if (r.className && r.sectionName && classMap.has(r.className)) {
+        const classId = classMap.get(r.className);
+        if (!sectionMap.has(`${classId}-${r.sectionName}`)) errors.push('Invalid Section');
+      }
+      enrollmentKey = [r.sessionName, r.semesterName, r.className, r.sectionName].join('|');
+    }
+
+    // Duplicate detection: same student + same enrollment target (or profile-only twice)
+    if (r.studentId) {
+      const rowKey = `${r.studentId}|${enrollment ? enrollmentKey : 'profile'}`.toLowerCase();
+      if (seenRowKeys.has(rowKey)) {
+        errors.push('Duplicate row in file');
+        duplicateStudentIds.add(r.studentId);
+      } else {
+        seenRowKeys.add(rowKey);
+      }
     }
 
     if (errors.length > 0) {
@@ -211,10 +238,7 @@ const validateStudentImport = async (rows) => {
     } else {
       validRows.push({
         data: row,
-        sessionMap,
-        semesterMap,
-        classMap,
-        sectionMap,
+        isUpdate: existingStudentIds.has(r.studentId),
       });
     }
   }
@@ -260,58 +284,87 @@ const confirmStudentImport = async (rows) => {
     sectionMap.set(`${s.schoolClassId}-${s.name}`, s.id);
   });
 
+  const existingStudents = await prisma.student.findMany({
+    select: { id: true, studentId: true },
+  });
+  const studentByStudentId = new Map(existingStudents.map((s) => [s.studentId, s.id]));
+
   for (const data of rows) {
     try {
+      const r = extractStudentRow(data);
+      const dob = toDate(r.dateOfBirth);
+      const isActive = r.status ? r.status.toLowerCase() !== 'inactive' : undefined;
 
-      // Create student
-      const student = await prisma.student.create({
-        data: {
-          studentId: data['Student ID*'],
-          admissionNumber: data['Admission Number'] || null,
-          fullName: data['Full Name*'],
-          dateOfBirth: data['Date of Birth'] ? new Date(data['Date of Birth']) : null,
-          guardianName: data['Guardian Name'] || null,
-          guardianPhone: data['Guardian Phone'] || null,
-          isActive: true,
-        },
-      });
-
-      // Get class ID
-      const classId = classMap.get(data['Class*']);
-      if (!classId) {
-        throw new Error(`Class not found: ${data['Class*']}`);
+      // Upsert student profile by Student ID
+      let studentId = studentByStudentId.get(r.studentId);
+      let student;
+      if (studentId) {
+        const updateData = { fullName: r.fullName || undefined };
+        if (r.admissionNumber) updateData.admissionNumber = r.admissionNumber;
+        if (r.dateOfBirth !== undefined && r.dateOfBirth !== null && r.dateOfBirth !== '') updateData.dateOfBirth = dob;
+        if (r.guardianName) updateData.guardianName = r.guardianName;
+        if (r.guardianPhone) updateData.guardianPhone = r.guardianPhone;
+        if (isActive !== undefined) updateData.isActive = isActive;
+        student = await prisma.student.update({
+          where: { id: studentId },
+          data: updateData,
+        });
+      } else {
+        student = await prisma.student.create({
+          data: {
+            studentId: r.studentId,
+            admissionNumber: r.admissionNumber || null,
+            fullName: r.fullName,
+            dateOfBirth: dob,
+            guardianName: r.guardianName || null,
+            guardianPhone: r.guardianPhone || null,
+            isActive: isActive !== undefined ? isActive : true,
+          },
+        });
+        studentByStudentId.set(r.studentId, student.id);
+        studentId = student.id;
       }
 
-      // Get section ID
-      const sectionId = sectionMap.get(`${classId}-${data['Section*']}`);
-      if (!sectionId) {
-        throw new Error(`Section not found: ${data['Section*']}`);
-      }
+      // Optional enrollment when Class/Section/Roll/Session/Semester are provided
+      if (hasEnrollmentData(r)) {
+        const classId = classMap.get(r.className);
+        const sectionId = sectionMap.get(`${classId}-${r.sectionName}`);
+        const academicSessionId = sessionMap.get(r.sessionName);
+        const semesterId = semesterMap.get(r.semesterName);
+        if (!classId) throw new Error(`Class not found: ${r.className}`);
+        if (!sectionId) throw new Error(`Section not found: ${r.sectionName}`);
+        if (!academicSessionId) throw new Error(`Academic Session not found: ${r.sessionName}`);
+        if (!semesterId) throw new Error(`Semester not found: ${r.semesterName}`);
 
-      // Get session ID
-      const academicSessionId = sessionMap.get(data['Academic Session*']);
-      if (!academicSessionId) {
-        throw new Error(`Academic Session not found: ${data['Academic Session*']}`);
+        const rollNumber = parseInt(r.rollRaw, 10);
+        const existingEnrollment = await prisma.studentEnrollment.findFirst({
+          where: {
+            studentId,
+            academicSessionId,
+            semesterId,
+            schoolClassId: classId,
+            sectionId,
+          },
+        });
+        if (existingEnrollment) {
+          await prisma.studentEnrollment.update({
+            where: { id: existingEnrollment.id },
+            data: { rollNumber, isActive: true },
+          });
+        } else {
+          await prisma.studentEnrollment.create({
+            data: {
+              studentId,
+              academicSessionId,
+              semesterId,
+              schoolClassId: classId,
+              sectionId,
+              rollNumber,
+              isActive: true,
+            },
+          });
+        }
       }
-
-      // Get semester ID
-      const semesterId = semesterMap.get(data['Semester*']);
-      if (!semesterId) {
-        throw new Error(`Semester not found: ${data['Semester*']}`);
-      }
-
-      // Create enrollment
-      await prisma.studentEnrollment.create({
-        data: {
-          studentId: student.id,
-          academicSessionId,
-          semesterId,
-          schoolClassId: classId,
-          sectionId,
-          rollNumber: parseInt(data['Roll Number*']),
-          isActive: true,
-        },
-      });
 
       importedStudents.push(student);
     } catch (error) {
@@ -584,6 +637,207 @@ const confirmTeacherImport = async (rows) => {
   };
 };
 
+/**
+ * Generate Excel template for subject import
+ */
+const generateSubjectTemplate = async () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Subjects');
+
+  worksheet.columns = [
+    { header: 'Name*', key: 'name', width: 30 },
+    { header: 'Code', key: 'code', width: 15 },
+    { header: 'Sort Order', key: 'sortOrder', width: 12 },
+  ];
+
+  worksheet.addRow({
+    name: 'Mathematics',
+    code: 'MATH',
+    sortOrder: 1,
+  });
+
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE0E0E0' },
+  };
+
+  return workbook;
+};
+
+/**
+ * Parse uploaded subject Excel file
+ */
+const parseSubjectExcel = async (buffer) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const worksheet = workbook.worksheets[0];
+
+  if (!worksheet) {
+    throw new Error('No worksheet found in the file');
+  }
+
+  const rows = [];
+  const headers = [];
+  let headerRow = 1;
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (row.values[1] === 'Name*') {
+      headerRow = rowNumber;
+    }
+  });
+
+  const headerRowData = worksheet.getRow(headerRow);
+  headerRowData.eachCell((cell, colNumber) => {
+    headers[colNumber] = cell.value;
+  });
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber > headerRow) {
+      const rowData = {};
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header == null) return;
+        const key = String(header).replace(/\*+$/, '');
+        rowData[key] = cell.value;
+      });
+      if (Object.keys(rowData).length > 0) {
+        rows.push(rowData);
+      }
+    }
+  });
+
+  return { headers, rows };
+};
+
+/**
+ * Validate subject import data
+ */
+const validateSubjectImport = async (rows) => {
+  const validRows = [];
+  const invalidRows = [];
+  const duplicateNames = new Set();
+  const seenNames = new Set();
+
+  const existingSubjects = await prisma.subject.findMany({
+    select: { id: true, name: true, code: true },
+  });
+  const subjectByName = new Map(existingSubjects.map((s) => [s.name.toLowerCase(), s]));
+  const subjectByCode = new Map(existingSubjects.filter((s) => s.code).map((s) => [s.code.toLowerCase(), s]));
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const errors = [];
+
+    const name = cell(row, 'Name') ? String(cell(row, 'Name')).trim() : '';
+    if (!name) {
+      errors.push('Name is required');
+    } else if (name.length < 2 || name.length > 100) {
+      errors.push('Name must be between 2 and 100 characters');
+    } else if (seenNames.has(name.toLowerCase())) {
+      errors.push('Duplicate name in file');
+      duplicateNames.add(name);
+    } else {
+      seenNames.add(name.toLowerCase());
+    }
+
+    const code = cell(row, 'Code') ? String(cell(row, 'Code')).trim() : '';
+    if (code) {
+      if (code.length < 2 || code.length > 10) {
+        errors.push('Code must be between 2 and 10 characters');
+      } else {
+        const codeOwner = subjectByCode.get(code.toLowerCase());
+        const nameOwner = subjectByName.get(name.toLowerCase());
+        if (codeOwner && (!nameOwner || codeOwner.id !== nameOwner.id)) {
+          errors.push(`Code "${code}" already used by "${codeOwner.name}"`);
+        }
+      }
+    }
+
+    const sortOrderRaw = cell(row, 'Sort Order');
+    if (sortOrderRaw !== undefined && sortOrderRaw !== null && sortOrderRaw !== '') {
+      const sortOrder = Number(sortOrderRaw);
+      if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+        errors.push('Sort Order must be a non-negative integer');
+      }
+    }
+
+    if (errors.length > 0) {
+      invalidRows.push({
+        rowNumber: i + 2,
+        data: row,
+        errors,
+      });
+    } else {
+      validRows.push({ data: row });
+    }
+  }
+
+  return {
+    totalRows: rows.length,
+    validRows,
+    invalidRows,
+    duplicateNames: Array.from(duplicateNames),
+  };
+};
+
+/**
+ * Confirm subject import (upsert by name)
+ */
+const confirmSubjectImport = async (rows) => {
+  const importedSubjects = [];
+  const errors = [];
+
+  const existingSubjects = await prisma.subject.findMany({
+    select: { id: true, name: true, code: true },
+  });
+  const subjectByName = new Map(existingSubjects.map((s) => [s.name.toLowerCase(), s]));
+
+  for (const data of rows) {
+    try {
+      const name = String(cell(data, 'Name')).trim();
+      const code = cell(data, 'Code') ? String(cell(data, 'Code')).trim() : null;
+      const sortOrderRaw = cell(data, 'Sort Order');
+      const sortOrder = sortOrderRaw === undefined || sortOrderRaw === null || sortOrderRaw === ''
+        ? 0
+        : parseInt(sortOrderRaw, 10);
+
+      const existing = subjectByName.get(name.toLowerCase());
+      let subject;
+      if (existing) {
+        subject = await prisma.subject.update({
+          where: { id: existing.id },
+          data: {
+            ...(code !== null && { code }),
+            sortOrder,
+          },
+        });
+      } else {
+        subject = await prisma.subject.create({
+          data: { name, code, sortOrder },
+        });
+        subjectByName.set(name.toLowerCase(), subject);
+      }
+
+      importedSubjects.push(subject);
+    } catch (error) {
+      errors.push({
+        data,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    importedCount: importedSubjects.length,
+    failedCount: errors.length,
+    importedSubjects,
+    errors,
+  };
+};
+
 module.exports = {
   generateStudentTemplate,
   parseStudentExcel,
@@ -593,4 +847,8 @@ module.exports = {
   parseTeacherExcel,
   validateTeacherImport,
   confirmTeacherImport,
+  generateSubjectTemplate,
+  parseSubjectExcel,
+  validateSubjectImport,
+  confirmSubjectImport,
 };

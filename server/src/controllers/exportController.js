@@ -315,9 +315,42 @@ const exportTeachers = async (req, res, next) => {
   }
 };
 
+/**
+ * Export subjects to Excel
+ */
+const exportSubjects = async (req, res, next) => {
+  try {
+    const subjects = await prisma.subject.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Subjects');
+    ws.columns = [
+      { header: 'Name', key: 'name', width: 30 },
+      { header: 'Code', key: 'code', width: 15 },
+      { header: 'Sort Order', key: 'sortOrder', width: 12 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const s of subjects) {
+      ws.addRow({
+        name: s.name,
+        code: s.code || '',
+        sortOrder: s.sortOrder,
+      });
+    }
+
+    await sendWorkbook(res, workbook, `subjects_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   exportStudents,
   exportTeachers,
+  exportSubjects,
   exportAttendance,
   exportResults,
 };

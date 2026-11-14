@@ -32,4 +32,9 @@ router.get('/teachers/template', authenticate, isAdmin, excelImportController.do
 router.post('/teachers/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewTeacherImport);
 router.post('/teachers/confirm', authenticate, isAdmin, excelImportController.confirmTeacherImport);
 
+// Subject import routes
+router.get('/subjects/template', authenticate, isAdmin, excelImportController.downloadSubjectTemplate);
+router.post('/subjects/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewSubjectImport);
+router.post('/subjects/confirm', authenticate, isAdmin, excelImportController.confirmSubjectImport);
+
 module.exports = router;
