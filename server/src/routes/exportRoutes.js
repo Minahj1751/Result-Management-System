@@ -6,6 +6,7 @@ const { authorize } = require('../middleware/auth');
 
 // Excel exports (admin full access; class teachers may export attendance for their scope)
 router.get('/students', authenticate, isAdmin, exportController.exportStudents);
+router.get('/teachers', authenticate, isAdmin, exportController.exportTeachers);
 router.get('/attendance', authenticate, authorize('ADMIN', 'CLASS_TEACHER'), exportController.exportAttendance);
 router.get('/results', authenticate, isAdmin, exportController.exportResults);
 

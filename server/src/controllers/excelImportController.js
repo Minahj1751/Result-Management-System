@@ -72,8 +72,81 @@ const confirmImport = async (req, res, next) => {
   }
 };
 
+/**
+ * Download teacher import template
+ */
+const downloadTeacherTemplate = async (req, res, next) => {
+  try {
+    const workbook = await excelImportService.generateTeacherTemplate();
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=teacher_import_template.xlsx');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Preview teacher import
+ */
+const previewTeacherImport = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { headers, rows } = await excelImportService.parseTeacherExcel(req.file.buffer);
+
+    const validation = await excelImportService.validateTeacherImport(rows);
+
+    res.json({
+      headers,
+      preview: rows.slice(0, 10),
+      validation,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Confirm teacher import
+ */
+const confirmTeacherImport = async (req, res, next) => {
+  try {
+    let rows = req.body.rows;
+    if (!rows && Array.isArray(req.body.validRows)) {
+      rows = req.body.validRows.map((r) => (r && r.data ? r.data : r));
+    }
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid rows data' });
+    }
+
+    const validation = await excelImportService.validateTeacherImport(rows);
+    if (validation.invalidRows.length > 0) {
+      return res.status(400).json({
+        error: `${validation.invalidRows.length} row(s) failed validation`,
+        invalidRows: validation.invalidRows,
+      });
+    }
+
+    const result = await excelImportService.confirmTeacherImport(validation.validRows.map((r) => r.data));
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   downloadTemplate,
   previewImport,
   confirmImport,
+  downloadTeacherTemplate,
+  previewTeacherImport,
+  confirmTeacherImport,
 };

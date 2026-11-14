@@ -27,4 +27,9 @@ router.get('/template', authenticate, isAdmin, excelImportController.downloadTem
 router.post('/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewImport);
 router.post('/confirm', authenticate, isAdmin, excelImportController.confirmImport);
 
+// Teacher import routes
+router.get('/teachers/template', authenticate, isAdmin, excelImportController.downloadTeacherTemplate);
+router.post('/teachers/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewTeacherImport);
+router.post('/teachers/confirm', authenticate, isAdmin, excelImportController.confirmTeacherImport);
+
 module.exports = router;

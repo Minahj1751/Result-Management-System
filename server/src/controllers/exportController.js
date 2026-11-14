@@ -250,8 +250,74 @@ const exportResults = async (req, res, next) => {
   }
 };
 
+/**
+ * Export teachers to Excel
+ */
+const exportTeachers = async (req, res, next) => {
+  try {
+    const { search, role, includeInactive } = req.query;
+
+    const where = {
+      role: {
+        in: ['SUBJECT_TEACHER', 'CLASS_TEACHER'],
+      },
+      ...(role && ['SUBJECT_TEACHER', 'CLASS_TEACHER'].includes(role) && { role }),
+      ...(includeInactive !== 'true' ? { isActive: true } : {}),
+      ...(search && {
+        OR: [
+          { email: { contains: search, mode: 'insensitive' } },
+          { teacherProfile: { fullName: { contains: search, mode: 'insensitive' } } },
+          { teacherProfile: { employeeId: { contains: search, mode: 'insensitive' } } },
+        ],
+      }),
+    };
+
+    const teachers = await prisma.user.findMany({
+      where,
+      include: { teacherProfile: true },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Teachers');
+    ws.columns = [
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Password', key: 'password', width: 15 },
+      { header: 'Full Name', key: 'fullName', width: 30 },
+      { header: 'Role', key: 'role', width: 18 },
+      { header: 'Employee ID', key: 'employeeId', width: 15 },
+      { header: 'Phone', key: 'phone', width: 15 },
+      { header: 'Designation', key: 'designation', width: 20 },
+      { header: 'Date of Birth', key: 'dob', width: 15 },
+      { header: 'Address', key: 'address', width: 30 },
+      { header: 'Status', key: 'status', width: 10 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const t of teachers) {
+      ws.addRow({
+        email: t.email,
+        password: '',
+        fullName: t.teacherProfile?.fullName || '',
+        role: t.role === 'CLASS_TEACHER' ? 'Class Teacher' : 'Subject Teacher',
+        employeeId: t.teacherProfile?.employeeId || '',
+        phone: t.teacherProfile?.phone || '',
+        designation: t.teacherProfile?.designation || '',
+        dob: t.teacherProfile?.dateOfBirth ? t.teacherProfile.dateOfBirth.toISOString().slice(0, 10) : '',
+        address: t.teacherProfile?.address || '',
+        status: t.isActive ? 'Active' : 'Inactive',
+      });
+    }
+
+    await sendWorkbook(res, workbook, `teachers_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   exportStudents,
+  exportTeachers,
   exportAttendance,
   exportResults,
 };

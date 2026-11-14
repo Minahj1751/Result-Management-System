@@ -1,4 +1,5 @@
 const ExcelJS = require('exceljs');
+const bcrypt = require('bcrypt');
 const prisma = require('../config/database');
 
 /**
@@ -329,9 +330,267 @@ const confirmStudentImport = async (rows) => {
   };
 };
 
+const TEACHER_ROLE_MAP = {
+  'subject teacher': 'SUBJECT_TEACHER',
+  'class teacher': 'CLASS_TEACHER',
+  subject_teacher: 'SUBJECT_TEACHER',
+  class_teacher: 'CLASS_TEACHER',
+};
+
+const normalizeTeacherRole = (value) => {
+  if (!value) return null;
+  const key = String(value).trim().toLowerCase();
+  return TEACHER_ROLE_MAP[key] || null;
+};
+
+// Row cells may be keyed with or without the template's '*' required markers
+const cell = (row, name) => row[name] ?? row[`${name}*`];
+
+/**
+ * Generate Excel template for teacher import
+ */
+const generateTeacherTemplate = async () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Teachers');
+
+  worksheet.columns = [
+    { header: 'Email*', key: 'email', width: 30 },
+    { header: 'Password', key: 'password', width: 20 },
+    { header: 'Full Name*', key: 'fullName', width: 30 },
+    { header: 'Role*', key: 'role', width: 20 },
+    { header: 'Employee ID', key: 'employeeId', width: 15 },
+    { header: 'Phone', key: 'phone', width: 15 },
+    { header: 'Designation', key: 'designation', width: 20 },
+    { header: 'Date of Birth', key: 'dateOfBirth', width: 15 },
+    { header: 'Address', key: 'address', width: 30 },
+  ];
+
+  worksheet.addRow({
+    email: 'teacher@example.com',
+    password: 'password123',
+    fullName: 'Jane Smith',
+    role: 'Subject Teacher',
+    employeeId: 'EMP001',
+    phone: '+8801712345678',
+    designation: 'Senior Teacher',
+    dateOfBirth: '1985-05-20',
+    address: 'Dhaka, Bangladesh',
+  });
+
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE0E0E0' },
+  };
+
+  return workbook;
+};
+
+/**
+ * Parse uploaded teacher Excel file
+ */
+const parseTeacherExcel = async (buffer) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const worksheet = workbook.worksheets[0];
+
+  if (!worksheet) {
+    throw new Error('No worksheet found in the file');
+  }
+
+  const rows = [];
+  const headers = [];
+  let headerRow = 1;
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (row.values[1] === 'Email*') {
+      headerRow = rowNumber;
+    }
+  });
+
+  const headerRowData = worksheet.getRow(headerRow);
+  headerRowData.eachCell((cell, colNumber) => {
+    headers[colNumber] = cell.value;
+  });
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber > headerRow) {
+      const rowData = {};
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header == null) return;
+        // Normalize header names so exported files (without '*' markers) also import cleanly
+        const key = String(header).replace(/\*+$/, '');
+        rowData[key] = cell.value;
+      });
+      if (Object.keys(rowData).length > 0) {
+        rows.push(rowData);
+      }
+    }
+  });
+
+  return { headers, rows };
+};
+
+/**
+ * Validate teacher import data
+ */
+const validateTeacherImport = async (rows) => {
+  const validRows = [];
+  const invalidRows = [];
+  const duplicateEmails = new Set();
+  const seenEmails = new Set();
+
+  const existingUsers = await prisma.user.findMany({
+    where: { role: { in: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ADMIN'] } },
+    select: { email: true },
+  });
+  const existingEmails = new Set(existingUsers.map((u) => u.email.toLowerCase()));
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const errors = [];
+
+    const email = cell(row, 'Email') ? String(cell(row, 'Email')).trim().toLowerCase() : '';
+    const emailExists = email ? existingEmails.has(email) : false;
+    if (!email) {
+      errors.push('Email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push('Invalid email format');
+    } else if (seenEmails.has(email)) {
+      errors.push('Duplicate email in file');
+      duplicateEmails.add(email);
+    } else {
+      seenEmails.add(email);
+    }
+
+    const password = cell(row, 'Password') ? String(cell(row, 'Password')) : '';
+    if (!password) {
+      if (!emailExists) {
+        errors.push('Password is required for new teachers');
+      }
+    } else if (password.length < 6) {
+      errors.push('Password must be at least 6 characters');
+    }
+
+    const fullName = cell(row, 'Full Name') ? String(cell(row, 'Full Name')).trim() : '';
+    if (!fullName) {
+      errors.push('Full Name is required');
+    } else if (fullName.length < 2 || fullName.length > 100) {
+      errors.push('Full Name must be between 2 and 100 characters');
+    }
+
+    if (!normalizeTeacherRole(cell(row, 'Role'))) {
+      errors.push('Role must be "Subject Teacher" or "Class Teacher"');
+    }
+
+    if (row['Phone'] && !/^\+?[0-9]{10,15}$/.test(String(row['Phone']).replace(/[\s-]/g, ''))) {
+      errors.push('Invalid Phone number');
+    }
+
+    if (errors.length > 0) {
+      invalidRows.push({
+        rowNumber: i + 2,
+        data: row,
+        errors,
+      });
+    } else {
+      validRows.push({ data: row });
+    }
+  }
+
+  return {
+    totalRows: rows.length,
+    validRows,
+    invalidRows,
+    duplicateEmails: Array.from(duplicateEmails),
+  };
+};
+
+/**
+ * Confirm teacher import
+ */
+const confirmTeacherImport = async (rows) => {
+  const importedTeachers = [];
+  const errors = [];
+
+  const existingUsers = await prisma.user.findMany({
+    where: { role: { in: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ADMIN'] } },
+    select: { id: true, email: true },
+  });
+  const userIdByEmail = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u.id]));
+
+  for (const data of rows) {
+    try {
+      const email = String(cell(data, 'Email')).trim().toLowerCase();
+      const role = normalizeTeacherRole(cell(data, 'Role'));
+      const password = cell(data, 'Password') ? String(cell(data, 'Password')) : '';
+      const profileData = {
+        fullName: String(cell(data, 'Full Name')).trim(),
+        employeeId: cell(data, 'Employee ID') ? String(cell(data, 'Employee ID')).trim() : null,
+        phone: cell(data, 'Phone') ? String(cell(data, 'Phone')).trim() : null,
+        designation: cell(data, 'Designation') ? String(cell(data, 'Designation')).trim() : null,
+        dateOfBirth: cell(data, 'Date of Birth') ? new Date(cell(data, 'Date of Birth')) : null,
+        address: cell(data, 'Address') ? String(cell(data, 'Address')).trim() : null,
+      };
+
+      const existingId = userIdByEmail.get(email);
+      let teacher;
+      if (existingId) {
+        // Existing teacher: update profile (and password/role only if provided)
+        teacher = await prisma.user.update({
+          where: { id: existingId },
+          data: {
+            ...(role && { role }),
+            ...(password && { passwordHash: await bcrypt.hash(password, 10) }),
+            teacherProfile: { update: profileData },
+          },
+          include: { teacherProfile: true },
+        });
+      } else {
+        if (!password) {
+          throw new Error('Password is required for new teachers');
+        }
+        teacher = await prisma.user.create({
+          data: {
+            email,
+            passwordHash: await bcrypt.hash(password, 10),
+            role,
+            isActive: true,
+            teacherProfile: { create: profileData },
+          },
+          include: { teacherProfile: true },
+        });
+        userIdByEmail.set(email, teacher.id);
+      }
+
+      const { passwordHash: _, ...teacherWithoutPassword } = teacher;
+      importedTeachers.push(teacherWithoutPassword);
+    } catch (error) {
+      errors.push({
+        data,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    importedCount: importedTeachers.length,
+    failedCount: errors.length,
+    importedTeachers,
+    errors,
+  };
+};
+
 module.exports = {
   generateStudentTemplate,
   parseStudentExcel,
   validateStudentImport,
   confirmStudentImport,
+  generateTeacherTemplate,
+  parseTeacherExcel,
+  validateTeacherImport,
+  confirmTeacherImport,
 };
