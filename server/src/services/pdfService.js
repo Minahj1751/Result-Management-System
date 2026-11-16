@@ -58,6 +58,24 @@ const formatReportDate = (dateFormat) => {
   }
 };
 
+const formatAssessmentDate = (date, dateFormat) => {
+  if (!date) return '';
+
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  switch (dateFormat) {
+    case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
+    case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
+    case 'DD-MM-YYYY': return `${dd}-${mm}-${yyyy}`;
+    case 'DD/MM/YYYY':
+    default: return `${dd}/${mm}/${yyyy}`;
+  }
+};
+
 /**
  * Generate marksheet HTML
  */
@@ -133,6 +151,7 @@ const generateMarksheetHTML = async (data) => {
     categoryList.forEach((cat) => {
       cat.assessments.forEach((assessmentName) => {
         let markDisplay = 'N/A';
+        let assessmentDate = '';
         const categoryResults = jsonData.categoryResults || {};
         // Match by category code key first, then by category name fallback
         const category = Object.values(categoryResults).find(
@@ -141,6 +160,7 @@ const generateMarksheetHTML = async (data) => {
         if (category) {
           const assessment = category.assessments.find((a) => a.name === assessmentName);
           if (assessment) {
+            assessmentDate = formatAssessmentDate(assessment.date, schoolSettings?.dateFormat);
             if (assessment.status === 'ABSENT') {
               markDisplay = 'A';
             } else if (assessment.status === 'EXEMPTED') {
@@ -152,7 +172,7 @@ const generateMarksheetHTML = async (data) => {
             }
           }
         }
-        marksCells += `<td>${markDisplay}</td>`;
+        marksCells += `<td>${markDisplay}${assessmentDate ? `<span class="date-row">${assessmentDate}</span>` : ''}</td>`;
       });
     });
 
