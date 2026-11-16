@@ -27,7 +27,7 @@ export default function Modal({ isOpen, onClose, title, children }) {
           &#8203;
         </span>
 
-        <div className="ui-modal-panel inline-block align-bottom bg-white text-left overflow-hidden transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        <div className="ui-modal-panel inline-block align-bottom bg-white text-left transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
           <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
             {title && (
               <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">

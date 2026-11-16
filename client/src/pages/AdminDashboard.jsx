@@ -41,7 +41,7 @@ export default function AdminDashboard() {
 
       setStats({
         totalStudents: studentsRes.pagination?.total ?? (studentsRes.students?.length || 0),
-        totalTeachers: teachers.length,
+        totalTeachers: teachers.pagination?.total ?? (teachers.teachers?.length || 0),
         totalClasses: classes.length,
         totalSubjects: subjects.length,
         totalSessions: sessions.length,

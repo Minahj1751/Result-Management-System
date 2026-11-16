@@ -25,6 +25,8 @@ export default function MarksEntry() {
   const [marks, setMarks] = useState({});
   const [statuses, setStatuses] = useState({});
   const [individualDates, setIndividualDates] = useState({});
+  const [assessmentDate, setAssessmentDate] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
   const [savedSnapshot, setSavedSnapshot] = useState('');
 
@@ -120,12 +122,25 @@ export default function MarksEntry() {
       setMarks(initialMarks);
       setStatuses(initialStatuses);
       setIndividualDates(initialDates);
+      setAssessmentDate(data.assessment.defaultDate?.split('T')[0] || '');
       setStudentSearch('');
       setSavedSnapshot(JSON.stringify({ m: initialMarks, s: initialStatuses, d: initialDates }));
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAssessmentDateSave = async () => {
+    try {
+      setSavingDate(true);
+      const updated = await assessmentAPI.updateAssessmentDate(selectedAssessment.id, assessmentDate || null);
+      setSelectedAssessment(updated);
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error updating assessment date');
+    } finally {
+      setSavingDate(false);
     }
   };
 
@@ -263,6 +278,7 @@ export default function MarksEntry() {
                     <div className="font-medium">{assessment.name}</div>
                     <div className="text-sm text-gray-600">{assessment.category?.name}</div>
                     <div className="text-sm text-gray-600">Max: {assessment.maximumMarks} | {assessment.submissionStatus}</div>
+                    <div className="text-sm text-gray-500">{assessment.defaultDate ? `Date: ${new Date(assessment.defaultDate).toLocaleDateString()}` : 'Date: not set'}</div>
                   </button>
                 ))}
               </div>
@@ -273,6 +289,18 @@ export default function MarksEntry() {
             <Card title={`Marks Entry — ${selectedAssessment.name} (Max: ${selectedAssessment.maximumMarks})`}>
               {loading ? <div className="text-center py-8">Loading...</div> : (
                 <>
+                  <div className="mb-4 flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="ui-field-label">Assessment Date</label>
+                      <Input type="date" value={assessmentDate}
+                        onChange={(e) => setAssessmentDate(e.target.value)}
+                        className="w-40" />
+                    </div>
+                    <Button size="sm" variant="secondary" onClick={handleAssessmentDateSave} disabled={savingDate}>
+                      {savingDate ? 'Saving...' : 'Save Date'}
+                    </Button>
+                    <span className="text-xs text-gray-500">The date this assessment was taken for this class & subject.</span>
+                  </div>
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <Input
                       placeholder="Search by name, ID or roll..."

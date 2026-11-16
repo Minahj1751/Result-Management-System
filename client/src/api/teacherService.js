@@ -33,6 +33,10 @@ export const teacherAPI = {
     const response = await api.post('/teachers/assignments/bulk', data);
     return response.data;
   },
+  setClassSubjectTeachers: async (data) => {
+    const response = await api.put('/teachers/assignments/by-class', data);
+    return response.data;
+  },
   updateTeacherAssignment: async (id, data) => {
     const response = await api.patch(`/teachers/assignments/${id}`, data);
     return response.data;

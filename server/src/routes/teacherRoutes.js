@@ -14,6 +14,7 @@ const {
 router.get('/assignments', authenticate, teacherController.getTeacherAssignments);
 router.post('/assignments', authenticate, isAdmin, createTeacherAssignmentValidation, validate, teacherController.createTeacherAssignment);
 router.post('/assignments/bulk', authenticate, isAdmin, teacherController.bulkCreateTeacherAssignments);
+router.put('/assignments/by-class', authenticate, isAdmin, teacherController.setClassSubjectTeachers);
 router.patch('/assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.updateTeacherAssignment);
 router.delete('/assignments/:id', authenticate, isAdmin, idParamValidation, validate, teacherController.deleteTeacherAssignment);
 

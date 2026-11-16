@@ -1,7 +1,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
-const archiver = require('archiver');
+const { ZipArchive } = require('archiver');
 const prisma = require('../config/database');
 const resultCalculationService = require('./resultCalculationService');
 
@@ -41,6 +41,20 @@ const generatePDF = async (html, outputPath) => {
       await browser.close();
     }
     throw error;
+  }
+};
+
+const formatReportDate = (dateFormat) => {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  switch (dateFormat) {
+    case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
+    case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
+    case 'DD-MM-YYYY': return `${dd}-${mm}-${yyyy}`;
+    case 'DD/MM/YYYY':
+    default: return `${dd}/${mm}/${yyyy}`;
   }
 };
 
@@ -118,7 +132,7 @@ const generateMarksheetHTML = async (data) => {
 
     categoryList.forEach((cat) => {
       cat.assessments.forEach((assessmentName) => {
-        let markDisplay = '-';
+        let markDisplay = 'N/A';
         const categoryResults = jsonData.categoryResults || {};
         // Match by category code key first, then by category name fallback
         const category = Object.values(categoryResults).find(
@@ -144,7 +158,7 @@ const generateMarksheetHTML = async (data) => {
 
     const pctDisplay = snapshot.percentage !== null && snapshot.percentage !== undefined
       ? `${Number(snapshot.percentage).toFixed(schoolSettings?.decimalPrecision || 2)}%`
-      : '-';
+      : 'N/A';
     const gpDisplay = snapshot.gradePoint !== null && snapshot.gradePoint !== undefined
       ? Number(snapshot.gradePoint).toFixed(2)
       : '-';
@@ -212,7 +226,7 @@ const generateMarksheetHTML = async (data) => {
   html = html.replace('{{ROLL_NUMBER}}', enrollment?.rollNumber || '');
   html = html.replace('{{ATTENDANCE}}', attendanceText);
   html = html.replace('{{ATTENDANCE_PERCENTAGE}}', attendancePercentage);
-  html = html.replace('{{REPORT_DATE}}', new Date().toLocaleDateString(schoolSettings?.dateFormat || 'en-GB'));
+  html = html.replace('{{REPORT_DATE}}', formatReportDate(schoolSettings?.dateFormat));
   html = html.replace('{{CATEGORY_HEADERS}}', categoryHeaders);
   html = html.replace('{{ASSESSMENT_HEADERS}}', assessmentHeaders);
   html = html.replace('{{SUBJECT_ROWS}}', subjectRows);
@@ -237,7 +251,7 @@ const generateStudentMarksheetPDF = async (data, outputPath) => {
  */
 const generateClassMarksheetsZIP = async (studentsData, outputPath) => {
   const output = require('fs').createWriteStream(outputPath);
-  const archive = archiver('zip', { zlib: { level: 9 } });
+  const archive = new ZipArchive({ zlib: { level: 9 } });
 
   return new Promise(async (resolve, reject) => {
     output.on('close', () => {

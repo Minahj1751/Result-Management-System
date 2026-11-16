@@ -64,7 +64,7 @@ export default function PDFGeneration() {
         `marksheet_${student.studentId}.pdf`
       );
     } catch (error) {
-      alert('Error generating marksheet. Ensure results are finalized first.');
+      alert('Error generating marksheet. Please try again.');
     } finally {
       setGeneratingId(null);
     }
@@ -152,7 +152,7 @@ export default function PDFGeneration() {
           </div>
           <Table columns={columns} data={students} />
           <div className="mt-4 text-sm text-gray-600">
-            {students.length} students loaded. Results must be finalized before marksheets can be generated.
+            {students.length} students loaded. Marksheet shows N/A for assessments without marks.
           </div>
         </Card>
       )}

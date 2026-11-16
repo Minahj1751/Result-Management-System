@@ -136,20 +136,28 @@ const calculateStudentSubjectResult = async (studentId, academicSessionId, semes
  */
 const calculateClassResults = async (academicSessionId, semesterId, schoolClassId, sectionId) => {
   try {
-    // Get all enrolled students
-    const enrollments = await prisma.studentEnrollment.findMany({
+    // Get enrolled students: semester-specific + session-level roster, deduped
+    const enrollmentRows = await prisma.studentEnrollment.findMany({
       where: {
         academicSessionId,
-        semesterId,
         schoolClassId,
         sectionId,
         isActive: true,
+        OR: [{ semesterId }, { semesterId: null }],
       },
       include: {
         student: true,
       },
-      orderBy: { rollNumber: 'asc' },
     });
+    const enrollmentByStudent = new Map();
+    enrollmentRows
+      .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+      .forEach((e) => {
+        if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+      });
+    const enrollments = [...enrollmentByStudent.values()].sort(
+      (a, b) => (a.rollNumber ?? 999999) - (b.rollNumber ?? 999999)
+    );
 
     // Get all subjects for this class
     const subjects = await prisma.subject.findMany({
@@ -295,6 +303,58 @@ const getResultSnapshot = async (studentId, academicSessionId, semesterId, schoo
 };
 
 /**
+ * Build marksheet rows live from assessments/marks (no finalized snapshot needed).
+ * Returns snapshot-shaped objects: { subject, percentage, grade, gradePoint, jsonData }.
+ * Subjects without any entered marks get null percentage/grade so the PDF shows N/A.
+ */
+const getStudentMarksheetSnapshots = async (studentId, academicSessionId, semesterId, schoolClassId, sectionId) => {
+  // Prefer class-wise subject mapping; fall back to subjects that have assessments
+  const classSubjects = await prisma.classSubject.findMany({
+    where: { schoolClassId },
+    include: { subject: true },
+  });
+
+  let subjects;
+  if (classSubjects.length > 0) {
+    subjects = classSubjects.map((cs) => cs.subject);
+  } else {
+    const assessmentRows = await prisma.assessment.findMany({
+      where: { academicSessionId, semesterId, schoolClassId, sectionId },
+      include: { subject: true },
+    });
+    const seen = new Set();
+    subjects = [];
+    assessmentRows.forEach((a) => {
+      if (a.subject && !seen.has(a.subject.id)) {
+        seen.add(a.subject.id);
+        subjects.push(a.subject);
+      }
+    });
+  }
+
+  subjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
+
+  const snapshots = [];
+  for (const subject of subjects) {
+    const calculation = await calculateStudentSubjectResult(
+      studentId, academicSessionId, semesterId, schoolClassId, sectionId, subject.id
+    );
+    if (!calculation) continue; // no assessments for this subject
+
+    const hasResult = calculation.totalWeightage > 0;
+    snapshots.push({
+      subject,
+      percentage: hasResult ? calculation.finalPercentage : null,
+      grade: hasResult ? calculation.grade : null,
+      gradePoint: hasResult ? calculation.gradePoint : null,
+      jsonData: JSON.stringify(calculation),
+    });
+  }
+
+  return snapshots;
+};
+
+/**
  * Compute overall result summary across subject snapshots for marksheets.
  * Returns average percentage, GPA (mean of grade points), overall grade,
  * and pass/fail status. Pass requires every graded subject to be non-fail.
@@ -331,5 +391,6 @@ module.exports = {
   calculateClassResults,
   finalizeResultSnapshot,
   getResultSnapshot,
+  getStudentMarksheetSnapshots,
   computeOverallSummary,
 };

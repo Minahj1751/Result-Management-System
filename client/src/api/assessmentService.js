@@ -37,6 +37,14 @@ export const assessmentAPI = {
     const response = await api.patch(`/assessments/${id}`, data);
     return response.data;
   },
+  bulkUpdateStatus: async (ids, submissionStatus) => {
+    const response = await api.patch('/assessments/bulk-status', { ids, submissionStatus });
+    return response.data;
+  },
+  updateAssessmentDate: async (id, defaultDate) => {
+    const response = await api.patch(`/assessments/${id}/date`, { defaultDate });
+    return response.data;
+  },
   deleteAssessment: async (id) => {
     const response = await api.delete(`/assessments/${id}`);
     return response.data;

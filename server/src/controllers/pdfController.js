@@ -15,8 +15,8 @@ const generateStudentMarksheet = async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // Get marksheet data
-    const snapshots = await resultCalculationService.getResultSnapshot(
+    // Get marksheet data (live calculation — works even without finalized snapshots/marks)
+    const snapshots = await resultCalculationService.getStudentMarksheetSnapshots(
       studentId,
       academicSessionId,
       semesterId,
@@ -28,13 +28,15 @@ const generateStudentMarksheet = async (req, res, next) => {
       where: { id: studentId },
     });
 
-    const enrollment = await prisma.studentEnrollment.findFirst({
+    // Enrollment may be semester-specific or session-level (semesterId NULL)
+    const enrollmentRows = await prisma.studentEnrollment.findMany({
       where: {
         studentId,
         academicSessionId,
-        semesterId,
         schoolClassId,
         sectionId,
+        isActive: true,
+        OR: [{ semesterId }, { semesterId: null }],
       },
       include: {
         academicSession: true,
@@ -43,6 +45,7 @@ const generateStudentMarksheet = async (req, res, next) => {
         section: true,
       },
     });
+    const enrollment = enrollmentRows.find((e) => e.semesterId === semesterId) || enrollmentRows[0] || null;
 
     const attendance = await prisma.attendanceRecord.findUnique({
       where: {
@@ -106,28 +109,36 @@ const generateClassMarksheets = async (req, res, next) => {
       ? String(studentIds).split(',').map((s) => s.trim()).filter(Boolean)
       : null;
 
-    // Get all enrolled students
-    const enrollments = await prisma.studentEnrollment.findMany({
+    // Get enrolled students: semester-specific + session-level roster, deduped by student
+    const enrollmentRows = await prisma.studentEnrollment.findMany({
       where: {
         academicSessionId,
-        semesterId,
         schoolClassId,
         sectionId,
         isActive: true,
+        OR: [{ semesterId }, { semesterId: null }],
         ...(selectedIds && { studentId: { in: selectedIds } }),
       },
       include: {
         student: true,
       },
-      orderBy: { rollNumber: 'asc' },
     });
+    const enrollmentByStudent = new Map();
+    enrollmentRows
+      .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+      .forEach((e) => {
+        if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+      });
+    const enrollments = [...enrollmentByStudent.values()].sort(
+      (a, b) => (a.rollNumber ?? 999999) - (b.rollNumber ?? 999999)
+    );
 
     const schoolSettings = await prisma.schoolSettings.findFirst();
 
     // Prepare data for all students
     const studentsData = [];
     for (const enrollment of enrollments) {
-      const snapshots = await resultCalculationService.getResultSnapshot(
+      const snapshots = await resultCalculationService.getStudentMarksheetSnapshots(
         enrollment.studentId,
         academicSessionId,
         semesterId,

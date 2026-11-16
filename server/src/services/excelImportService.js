@@ -28,7 +28,6 @@ const generateStudentTemplate = async () => {
     { header: 'Section', key: 'sectionName', width: 10 },
     { header: 'Roll Number', key: 'rollNumber', width: 12 },
     { header: 'Academic Session', key: 'academicSession', width: 20 },
-    { header: 'Semester', key: 'semester', width: 15 },
   ];
 
   // Add sample data
@@ -43,7 +42,6 @@ const generateStudentTemplate = async () => {
     sectionName: 'A',
     rollNumber: 1,
     academicSession: '2025-26',
-    semester: 'First Term',
   });
 
   // Style header row
@@ -144,12 +142,12 @@ const validateStudentImport = async (rows) => {
   );
 
   const academicSessions = await prisma.academicSession.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, isActive: true },
   });
   const sessionMap = new Map(academicSessions.map((s) => [s.name, s.id]));
 
   const semesters = await prisma.semester.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, academicSessionId: true },
   });
   const semesterMap = new Map(semesters.map((s) => [s.name, s.id]));
 
@@ -197,25 +195,59 @@ const validateStudentImport = async (rows) => {
     const enrollment = hasEnrollmentData(r);
     let enrollmentKey = '';
     if (enrollment) {
-      for (const [label, value] of [
-        ['Academic Session', r.sessionName],
-        ['Semester', r.semesterName],
-        ['Class', r.className],
-        ['Section', r.sectionName],
-      ]) {
-        if (!value) errors.push(`${label} is required when enrolling`);
+      // Session: explicit name, else fall back to the active session
+      let resolvedSessionName = r.sessionName;
+      if (!resolvedSessionName) {
+        const activeSession = academicSessions.find((s) => s.isActive) || academicSessions[0];
+        resolvedSessionName = activeSession?.name || '';
+        if (!resolvedSessionName) errors.push('No academic session available');
       }
-      if (!str(r.rollRaw) || !Number.isInteger(Number(r.rollRaw)) || Number(r.rollRaw) < 1) {
-        errors.push('Valid Roll Number is required when enrolling');
+      if (resolvedSessionName && !sessionMap.has(resolvedSessionName)) {
+        errors.push('Invalid Academic Session');
       }
-      if (r.sessionName && !sessionMap.has(r.sessionName)) errors.push('Invalid Academic Session');
-      if (r.semesterName && !semesterMap.has(r.semesterName)) errors.push('Invalid Semester');
-      if (r.className && !classMap.has(r.className)) errors.push('Invalid Class');
-      if (r.className && r.sectionName && classMap.has(r.className)) {
+
+      // Semester is optional (session-level roster); validate only if provided
+      if (r.semesterName) {
+        if (!semesterMap.has(r.semesterName)) {
+          errors.push('Invalid Semester');
+        } else if (resolvedSessionName && sessionMap.has(resolvedSessionName)) {
+          const sem = semesters.find((s) => s.name === r.semesterName);
+          const sess = academicSessions.find((s) => s.name === resolvedSessionName);
+          if (sem && sess && sem.academicSessionId !== sess.id) {
+            errors.push('Semester does not belong to the session');
+          }
+        }
+      }
+
+      if (!r.className) {
+        errors.push('Class is required when enrolling');
+      } else if (!classMap.has(r.className)) {
+        errors.push('Invalid Class');
+      }
+
+      // Section: explicit, else auto-resolve when the class has exactly one section
+      let resolvedSectionName = r.sectionName;
+      if (r.className && classMap.has(r.className)) {
         const classId = classMap.get(r.className);
-        if (!sectionMap.has(`${classId}-${r.sectionName}`)) errors.push('Invalid Section');
+        const classSections = sections.filter((s) => s.schoolClassId === classId);
+        if (!resolvedSectionName) {
+          if (classSections.length === 1) {
+            resolvedSectionName = classSections[0].name;
+          } else {
+            errors.push(classSections.length === 0 ? 'No sections exist for this class' : 'Section is required (class has multiple sections)');
+          }
+        } else if (!sectionMap.has(`${classId}-${resolvedSectionName}`)) {
+          errors.push('Invalid Section');
+        }
+      } else if (!resolvedSectionName) {
+        errors.push('Section is required when enrolling');
       }
-      enrollmentKey = [r.sessionName, r.semesterName, r.className, r.sectionName].join('|');
+
+      if (str(r.rollRaw) && (!Number.isInteger(Number(r.rollRaw)) || Number(r.rollRaw) < 1)) {
+        errors.push('Roll Number must be a positive integer');
+      }
+
+      enrollmentKey = [resolvedSessionName, r.semesterName, r.className, resolvedSectionName].join('|');
     }
 
     // Duplicate detection: same student + same enrollment target (or profile-only twice)
@@ -262,7 +294,7 @@ const confirmStudentImport = async (rows) => {
 
   // Rebuild lookup maps from the database
   const academicSessions = await prisma.academicSession.findMany({
-    select: { id: true, name: true },
+    select: { id: true, name: true, isActive: true },
   });
   const sessionMap = new Map(academicSessions.map((s) => [s.name, s.id]));
 
@@ -325,31 +357,48 @@ const confirmStudentImport = async (rows) => {
         studentId = student.id;
       }
 
-      // Optional enrollment when Class/Section/Roll/Session/Semester are provided
+      // Optional enrollment: session + class + section (+ optional semester/roll)
       if (hasEnrollmentData(r)) {
-        const classId = classMap.get(r.className);
-        const sectionId = sectionMap.get(`${classId}-${r.sectionName}`);
-        const academicSessionId = sessionMap.get(r.sessionName);
-        const semesterId = semesterMap.get(r.semesterName);
-        if (!classId) throw new Error(`Class not found: ${r.className}`);
-        if (!sectionId) throw new Error(`Section not found: ${r.sectionName}`);
-        if (!academicSessionId) throw new Error(`Academic Session not found: ${r.sessionName}`);
-        if (!semesterId) throw new Error(`Semester not found: ${r.semesterName}`);
+        // Session: explicit name, else the active session
+        let sessionName = r.sessionName;
+        if (!sessionName) {
+          const active = academicSessions.find((s) => s.isActive) || academicSessions[0];
+          sessionName = active?.name;
+        }
+        const academicSessionId = sessionName ? sessionMap.get(sessionName) : null;
+        if (!academicSessionId) throw new Error(`Academic Session not found: ${sessionName || '(active session)'}`);
 
-        const rollNumber = parseInt(r.rollRaw, 10);
+        const semesterId = r.semesterName ? semesterMap.get(r.semesterName) || null : null;
+        if (r.semesterName && !semesterId) throw new Error(`Semester not found: ${r.semesterName}`);
+
+        const classId = r.className ? classMap.get(r.className) : null;
+        if (r.className && !classId) throw new Error(`Class not found: ${r.className}`);
+
+        let sectionName = r.sectionName;
+        if (classId && !sectionName) {
+          const classSections = sections.filter((s) => s.schoolClassId === classId);
+          if (classSections.length === 1) sectionName = classSections[0].name;
+        }
+        const sectionId = classId && sectionName ? sectionMap.get(`${classId}-${sectionName}`) : null;
+        if (!sectionId) throw new Error(`Section not found: ${sectionName || '(auto)'}`);
+
+        const rollNumber = str(r.rollRaw) ? parseInt(r.rollRaw, 10) : null;
         const existingEnrollment = await prisma.studentEnrollment.findFirst({
           where: {
             studentId,
             academicSessionId,
-            semesterId,
             schoolClassId: classId,
             sectionId,
+            ...(semesterId ? { semesterId } : { semesterId: null }),
           },
         });
         if (existingEnrollment) {
           await prisma.studentEnrollment.update({
             where: { id: existingEnrollment.id },
-            data: { rollNumber, isActive: true },
+            data: {
+              ...(rollNumber !== null && { rollNumber }),
+              isActive: true,
+            },
           });
         } else {
           await prisma.studentEnrollment.create({

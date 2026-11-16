@@ -136,11 +136,26 @@ const getEligibleSubjects = async (req, res, next) => {
     const assignments = await prisma.teacherAssignment.findMany({
       where: {
         academicSessionId,
-        semesterId,
         isActive: true,
-        OR: pairList.map((p) => ({ schoolClassId: p.schoolClassId, sectionId: p.sectionId })),
+        // Session-level assignments (semesterId NULL) apply to every exam
+        AND: [
+          { OR: [{ semesterId }, { semesterId: null }] },
+          { OR: pairList.map((p) => ({ schoolClassId: p.schoolClassId, sectionId: p.sectionId })) },
+        ],
       },
       select: { schoolClassId: true, sectionId: true, subjectId: true },
+    });
+
+    // Class-wise subject mapping takes priority when configured
+    const classIds = [...new Set(pairList.map((p) => p.schoolClassId))];
+    const classSubjects = await prisma.classSubject.findMany({
+      where: { schoolClassId: { in: classIds } },
+      select: { schoolClassId: true, subjectId: true },
+    });
+    const mappedByClass = new Map();
+    classSubjects.forEach((cs) => {
+      if (!mappedByClass.has(cs.schoolClassId)) mappedByClass.set(cs.schoolClassId, new Set());
+      mappedByClass.get(cs.schoolClassId).add(cs.subjectId);
     });
 
     const eligibleMap = new Map();
@@ -156,8 +171,13 @@ const getEligibleSubjects = async (req, res, next) => {
     const result = pairList.map((p) => {
       const key = `${p.schoolClassId}:${p.sectionId}`;
       const assigned = eligibleMap.get(key);
-      // No teacher assignments for this pair -> all subjects are eligible
-      const subjectIds = assigned.size > 0 ? allSubjectIds.filter((id) => assigned.has(id)) : allSubjectIds;
+      // Priority: explicit class-subject mapping > teacher assignments > all subjects
+      const mapped = mappedByClass.get(p.schoolClassId);
+      const subjectIds = mapped && mapped.size > 0
+        ? allSubjectIds.filter((id) => mapped.has(id))
+        : assigned.size > 0
+          ? allSubjectIds.filter((id) => assigned.has(id))
+          : allSubjectIds;
       return { schoolClassId: p.schoolClassId, sectionId: p.sectionId, subjectIds };
     });
 
@@ -256,7 +276,7 @@ const bulkCreateAssessments = async (req, res, next) => {
     const duplicates = validCombos.filter((c) => existingKeys.has(`${c.schoolClassId}:${c.sectionId}:${c.subjectId}`));
 
     const maxMarks = parseFloat(maximumMarks);
-    const date = new Date(defaultDate);
+    const date = defaultDate ? new Date(defaultDate) : null;
 
     let createdCount = 0;
     if (toCreate.length > 0) {
@@ -271,7 +291,7 @@ const bulkCreateAssessments = async (req, res, next) => {
           subjectId: c.subjectId,
           maximumMarks: maxMarks,
           defaultDate: date,
-          submissionStatus: 'DRAFT',
+          submissionStatus: 'APPROVED',
           publicationStatus: 'DRAFT',
         })),
         skipDuplicates: true,
@@ -319,8 +339,8 @@ const createAssessment = async (req, res, next) => {
         sectionId,
         subjectId,
         maximumMarks: parseFloat(maximumMarks),
-        defaultDate: new Date(defaultDate),
-        submissionStatus: 'DRAFT',
+        defaultDate: defaultDate ? new Date(defaultDate) : null,
+        submissionStatus: 'APPROVED',
         publicationStatus: 'DRAFT',
       },
       include: {
@@ -418,6 +438,89 @@ const deleteAssessmentCategory = async (req, res, next) => {
 };
 
 /**
+ * Bulk update submission status for selected assessments
+ */
+const bulkUpdateAssessmentStatus = async (req, res, next) => {
+  try {
+    const { ids, submissionStatus } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+    if (!['DRAFT', 'SUBMITTED', 'REVIEWED', 'APPROVED'].includes(submissionStatus)) {
+      return res.status(400).json({ error: 'Invalid submissionStatus' });
+    }
+
+    const result = await prisma.assessment.updateMany({
+      where: { id: { in: ids } },
+      data: { submissionStatus },
+    });
+
+    res.json({ updated: result.count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update an assessment's date. Admins can update any assessment;
+ * teachers can only update assessments they are assigned to.
+ */
+const updateAssessmentDate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { defaultDate } = req.body;
+
+    if (defaultDate !== undefined && defaultDate !== null && defaultDate !== '' && Number.isNaN(new Date(defaultDate).getTime())) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const assessment = await prisma.assessment.findUnique({ where: { id } });
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found' });
+    }
+
+    if (req.user.role !== 'ADMIN') {
+      const profile = req.user.teacherProfile;
+      if (!profile) {
+        return res.status(403).json({ error: 'Teacher profile not found' });
+      }
+      const assignment = await prisma.teacherAssignment.findFirst({
+        where: {
+          teacherId: profile.id,
+          subjectId: assessment.subjectId,
+          academicSessionId: assessment.academicSessionId,
+          OR: [{ semesterId: assessment.semesterId }, { semesterId: null }],
+          schoolClassId: assessment.schoolClassId,
+          sectionId: assessment.sectionId,
+          isActive: true,
+        },
+      });
+      if (!assignment) {
+        return res.status(403).json({ error: 'You are not assigned to this assessment' });
+      }
+    }
+
+    const updated = await prisma.assessment.update({
+      where: { id },
+      data: { defaultDate: defaultDate ? new Date(defaultDate) : null },
+      include: {
+        category: true,
+        academicSession: true,
+        semester: true,
+        schoolClass: true,
+        section: true,
+        subject: true,
+      },
+    });
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Delete assessment
  */
 const deleteAssessment = async (req, res, next) => {
@@ -446,6 +549,8 @@ module.exports = {
   getEligibleSubjects,
   createAssessment,
   bulkCreateAssessments,
+  bulkUpdateAssessmentStatus,
   updateAssessment,
+  updateAssessmentDate,
   deleteAssessment,
 };

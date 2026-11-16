@@ -10,6 +10,7 @@ import Pagination from '../../components/Pagination';
 import SearchInput from '../../components/SearchInput';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
+import BulkActionToolbar from '../../components/BulkActionToolbar';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 const emptyCategory = { name: '', code: '', weightage: '' };
@@ -45,6 +46,8 @@ export default function AssessmentManagement() {
   const [eligibilityLoading, setEligibilityLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkStatusValue, setBulkStatusValue] = useState('');
 
   const [formSemesters, setFormSemesters] = useState([]);
   const [formSections, setFormSections] = useState([]);
@@ -95,6 +98,8 @@ export default function AssessmentManagement() {
     loadAssessments(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId]);
+
+  useEffect(() => { setSelectedIds(new Set()); }, [pagination.page, pagination.limit, filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId]);
 
   const handleSearch = (search) => {
     setFilter((f) => ({ ...f, search }));
@@ -251,7 +256,7 @@ export default function AssessmentManagement() {
   };
 
   const canProceed = () => {
-    if (step === 0) return assessmentForm.name && assessmentForm.categoryId && assessmentForm.academicSessionId && assessmentForm.semesterId && assessmentForm.maximumMarks && assessmentForm.defaultDate;
+    if (step === 0) return assessmentForm.name && assessmentForm.categoryId && assessmentForm.academicSessionId && assessmentForm.semesterId && assessmentForm.maximumMarks;
     if (step === 1) return selectedPairs.length > 0;
     if (step === 2) return selectedSubjects.length > 0;
     return true;
@@ -308,6 +313,40 @@ export default function AssessmentManagement() {
     }
   };
 
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const allPageSelected = assessments.length > 0 && assessments.every((a) => selectedIds.has(a.id));
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) assessments.forEach((a) => next.delete(a.id));
+      else assessments.forEach((a) => next.add(a.id));
+      return next;
+    });
+  };
+
+  const handleBulkStatus = async () => {
+    if (!bulkStatusValue) {
+      alert('Select a status first');
+      return;
+    }
+    try {
+      const result = await assessmentAPI.bulkUpdateStatus([...selectedIds], bulkStatusValue);
+      alert(`Updated ${result.updated} assessment(s)`);
+      setSelectedIds(new Set());
+      setBulkStatusValue('');
+      loadAssessments();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error updating assessments');
+    }
+  };
+
   const categoryColumns = [
     { key: 'name', label: 'Category Name' },
     { key: 'code', label: 'Code' },
@@ -315,6 +354,12 @@ export default function AssessmentManagement() {
   ];
 
   const assessmentColumns = [
+    {
+      key: 'select', label: '',
+      render: (val, row) => (
+        <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} className="w-4 h-4 text-blue-600" />
+      ),
+    },
     { key: 'name', label: 'Assessment' },
     { key: 'category', label: 'Category', render: (val, row) => row.category?.name },
     { key: 'subject', label: 'Subject', render: (val, row) => row.subject?.name },
@@ -322,7 +367,7 @@ export default function AssessmentManagement() {
     { key: 'section', label: 'Section', render: (val, row) => row.section?.name },
     { key: 'maximumMarks', label: 'Max' },
     { key: 'marksCount', label: 'Marks', render: (val, row) => row._count?.marksEntries ?? 0 },
-    { key: 'defaultDate', label: 'Date', render: (val) => new Date(val).toLocaleDateString() },
+    { key: 'defaultDate', label: 'Date', render: (val) => (val ? new Date(val).toLocaleDateString() : 'TBD') },
     {
       key: 'submissionStatus',
       label: 'Status',
@@ -403,6 +448,12 @@ export default function AssessmentManagement() {
       <Card title="Assessments">
         {loading ? <div className="text-center py-8">Loading...</div> : (
           <>
+            <div className="mb-3">
+              <label className="text-sm text-gray-600 inline-flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="w-4 h-4 text-blue-600" />
+                Select all on this page
+              </label>
+            </div>
             <Table columns={assessmentColumns} data={assessments} emptyMessage="No assessments match the current filters" />
             <Pagination
               pagination={pagination}
@@ -412,6 +463,19 @@ export default function AssessmentManagement() {
           </>
         )}
       </Card>
+
+      <BulkActionToolbar count={selectedIds.size} onClear={() => setSelectedIds(new Set())}>
+        <Select value={bulkStatusValue} onChange={(e) => setBulkStatusValue(e.target.value)}
+          options={[
+            { value: 'DRAFT', label: 'Draft' },
+            { value: 'SUBMITTED', label: 'Submitted' },
+            { value: 'REVIEWED', label: 'Reviewed' },
+            { value: 'APPROVED', label: 'Approved' },
+          ]}
+          placeholder="Set status..."
+          className="w-40" />
+        <Button size="sm" onClick={handleBulkStatus} disabled={!bulkStatusValue}>Apply</Button>
+      </BulkActionToolbar>
 
       <Modal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} title="Add Assessment Category">
         <form onSubmit={handleCategorySubmit} className="space-y-4">
@@ -491,8 +555,8 @@ export default function AssessmentManagement() {
                   options={formSemesters.map((s) => ({ value: s.id, label: s.name }))} required />
                 <Input label="Maximum Marks" type="number" name="maximumMarks" value={assessmentForm.maximumMarks}
                   onChange={(e) => setAssessmentForm({ ...assessmentForm, maximumMarks: e.target.value })} required />
-                <Input label="Assessment Date" type="date" name="defaultDate" value={assessmentForm.defaultDate}
-                  onChange={(e) => setAssessmentForm({ ...assessmentForm, defaultDate: e.target.value })} required />
+                <Input label="Assessment Date (optional — teacher sets it during mark entry)" type="date" name="defaultDate" value={assessmentForm.defaultDate}
+                  onChange={(e) => setAssessmentForm({ ...assessmentForm, defaultDate: e.target.value })} />
               </div>
             )}
 
@@ -562,7 +626,7 @@ export default function AssessmentManagement() {
                   <div className="ui-summary-row"><span className="ui-summary-label">Session</span><span className="ui-summary-value">{sessionName}</span></div>
                   <div className="ui-summary-row"><span className="ui-summary-label">Semester</span><span className="ui-summary-value">{semesterName}</span></div>
                   <div className="ui-summary-row"><span className="ui-summary-label">Max Marks</span><span className="ui-summary-value">{assessmentForm.maximumMarks}</span></div>
-                  <div className="ui-summary-row"><span className="ui-summary-label">Date</span><span className="ui-summary-value">{assessmentForm.defaultDate}</span></div>
+                  <div className="ui-summary-row"><span className="ui-summary-label">Date</span><span className="ui-summary-value">{assessmentForm.defaultDate || 'Set by teacher at mark entry'}</span></div>
                   <div className="ui-summary-row"><span className="ui-summary-label">Classes/Sections</span><span className="ui-summary-value">{selectedPairs.length}</span></div>
                   <div className="ui-summary-row"><span className="ui-summary-label">Subjects</span><span className="ui-summary-value">{selectedSubjects.length}</span></div>
                   <div className="ui-summary-row"><span className="ui-summary-label">Valid combinations</span><span className="ui-summary-value text-blue-700">{validCombinations.combos.length}</span></div>

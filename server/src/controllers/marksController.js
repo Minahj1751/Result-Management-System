@@ -17,7 +17,8 @@ const assertTeacherAssignedToAssessment = async (req, assessment) => {
       teacherId: profile.id,
       subjectId: assessment.subjectId,
       academicSessionId: assessment.academicSessionId,
-      semesterId: assessment.semesterId,
+      // Session-level assignments (semesterId NULL) apply to every exam in the session
+      OR: [{ semesterId: assessment.semesterId }, { semesterId: null }],
       schoolClassId: assessment.schoolClassId,
       sectionId: assessment.sectionId,
       isActive: true,
@@ -96,20 +97,31 @@ const getAssessmentMarks = async (req, res, next) => {
       return res.status(404).json({ error: 'Assessment not found' });
     }
 
-    // Get enrolled students
+    // Get enrolled students: semester-specific enrollments plus the
+    // session-level class roster (semesterId NULL). Deduped by student.
     const enrollments = await prisma.studentEnrollment.findMany({
       where: {
         academicSessionId: assessment.academicSessionId,
-        semesterId: assessment.semesterId,
         schoolClassId: assessment.schoolClassId,
         sectionId: assessment.sectionId,
         isActive: true,
+        OR: [{ semesterId: assessment.semesterId }, { semesterId: null }],
       },
       include: {
         student: true,
       },
-      orderBy: { rollNumber: 'asc' },
     });
+
+    // Prefer the semester-specific enrollment (roll number) over the session roster
+    const enrollmentByStudent = new Map();
+    enrollments
+      .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+      .forEach((e) => {
+        if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+      });
+    const roster = [...enrollmentByStudent.values()].sort(
+      (a, b) => (a.rollNumber ?? 999999) - (b.rollNumber ?? 999999)
+    );
 
     // Get existing marks entries
     const marksEntries = await prisma.marksEntry.findMany({
@@ -130,8 +142,8 @@ const getAssessmentMarks = async (req, res, next) => {
       marksMap.set(entry.studentId, entry);
     });
 
-    // Combine enrollments with marks
-    const studentsWithMarks = enrollments.map((enrollment) => {
+    // Combine roster with marks
+    const studentsWithMarks = roster.map((enrollment) => {
       const marksEntry = marksMap.get(enrollment.studentId);
       return {
         student: enrollment.student,

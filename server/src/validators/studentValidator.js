@@ -35,9 +35,8 @@ const createEnrollmentValidation = [
     .notEmpty()
     .withMessage('Academic session ID is required'),
   body('semesterId')
-    .trim()
-    .notEmpty()
-    .withMessage('Semester ID is required'),
+    .optional()
+    .trim(),
   body('schoolClassId')
     .trim()
     .notEmpty()
@@ -47,9 +46,7 @@ const createEnrollmentValidation = [
     .notEmpty()
     .withMessage('Section ID is required'),
   body('rollNumber')
-    .trim()
-    .notEmpty()
-    .withMessage('Roll number is required')
+    .optional()
     .isInt({ min: 1 })
     .withMessage('Roll number must be a positive integer'),
 ];

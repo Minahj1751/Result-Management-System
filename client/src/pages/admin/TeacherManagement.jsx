@@ -16,7 +16,6 @@ import BulkActionToolbar from '../../components/BulkActionToolbar';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 const emptyForm = { email: '', password: '', fullName: '', role: 'SUBJECT_TEACHER', employeeId: '', phone: '', designation: '' };
-const emptyAssignment = { teacherId: '', subjectId: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '', startDate: new Date().toISOString().split('T')[0] };
 const emptyClassAssignment = { teacherId: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '', startDate: new Date().toISOString().split('T')[0] };
 const emptyBulkAssignment = { teacherId: '', academicSessionId: '', semesterId: '', startDate: new Date().toISOString().split('T')[0], subjectIds: [], pairValues: [] };
 
@@ -31,16 +30,21 @@ export default function TeacherManagement() {
   const [allSections, setAllSections] = useState([]);
   const [sections, setSections] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [allTeachers, setAllTeachers] = useState([]);
+  const [assignFilter, setAssignFilter] = useState({ academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '' });
+  const [assignSections, setAssignSections] = useState([]);
+  const [classSubjectList, setClassSubjectList] = useState([]);
+  const [subjectTeachers, setSubjectTeachers] = useState({});
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignMessage, setAssignMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isClassAssignModalOpen, setIsClassAssignModalOpen] = useState(false);
   const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
   const [isBulkClassAssignOpen, setIsBulkClassAssignOpen] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
-  const [assignmentForm, setAssignmentForm] = useState(emptyAssignment);
   const [classAssignmentForm, setClassAssignmentForm] = useState(emptyClassAssignment);
   const [bulkAssignmentForm, setBulkAssignmentForm] = useState(emptyBulkAssignment);
   const [bulkClassForm, setBulkClassForm] = useState({ academicSessionId: '', semesterId: '', startDate: new Date().toISOString().split('T')[0], selections: {} });
@@ -59,13 +63,14 @@ export default function TeacherManagement() {
 
   const loadInitial = async () => {
     try {
-      const [sa, ca, sessionsData, classesData, subjectsData, allSecs] = await Promise.all([
+      const [sa, ca, sessionsData, classesData, subjectsData, allSecs, allTeachersData] = await Promise.all([
         teacherAPI.getTeacherAssignments(),
         teacherAPI.getClassTeacherAssignments(),
         academicAPI.getSessions(),
         academicAPI.getClasses(),
         academicAPI.getSubjects(),
         academicAPI.getSections(),
+        teacherAPI.getTeachers({ limit: 200, includeInactive: 'true' }),
       ]);
       setSubjectAssignments(sa);
       setClassAssignments(ca);
@@ -73,6 +78,7 @@ export default function TeacherManagement() {
       setClasses(classesData);
       setSubjects(subjectsData);
       setAllSections(allSecs);
+      setAllTeachers(allTeachersData.teachers || []);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -156,18 +162,6 @@ export default function TeacherManagement() {
     }
   };
 
-  const handleAssignmentSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await teacherAPI.createTeacherAssignment(assignmentForm);
-      setIsAssignModalOpen(false);
-      setAssignmentForm(emptyAssignment);
-      reloadAll();
-    } catch (error) {
-      alert(error.response?.data?.error || 'Error creating assignment');
-    }
-  };
-
   const handleClassAssignmentSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -177,16 +171,6 @@ export default function TeacherManagement() {
       reloadAll();
     } catch (error) {
       alert(error.response?.data?.error || 'Error creating class teacher assignment');
-    }
-  };
-
-  const handleDeleteAssignment = async (id) => {
-    if (!confirm('Deactivate this assignment?')) return;
-    try {
-      await teacherAPI.updateTeacherAssignment(id, { isActive: false });
-      reloadAll();
-    } catch (error) {
-      alert('Error removing assignment');
     }
   };
 
@@ -283,10 +267,102 @@ export default function TeacherManagement() {
     }
   });
 
-  const teacherOptions = teachers.filter((t) => t.teacherProfile).map((t) => ({
+  const teacherOptions = allTeachers.filter((t) => t.teacherProfile).map((t) => ({
     value: t.teacherProfile.id,
     label: `${t.teacherProfile.fullName} (${t.email})`,
   }));
+
+  // Subject assignment by class filter
+  const handleAssignSessionChange = async (e) => {
+    const academicSessionId = e.target.value;
+    setAssignFilter({ ...assignFilter, academicSessionId, semesterId: '' });
+    await loadSemesters(academicSessionId);
+  };
+
+  const handleAssignClassChange = async (e) => {
+    const schoolClassId = e.target.value;
+    setAssignFilter({ ...assignFilter, schoolClassId, sectionId: '' });
+    setAssignSections([]);
+    setClassSubjectList([]);
+    setAssignMessage('');
+    if (!schoolClassId) return;
+    const [secs, mappings] = await Promise.all([
+      academicAPI.getSections(schoolClassId),
+      academicAPI.getClassSubjects(schoolClassId),
+    ]);
+    setAssignSections(secs || []);
+    setClassSubjectList(
+      (mappings || [])
+        .map((m) => m.subject)
+        .filter(Boolean)
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))
+    );
+  };
+
+  // Prefill currently assigned teachers when session/semester/class/section are selected
+  useEffect(() => {
+    const { academicSessionId, semesterId, schoolClassId, sectionId } = assignFilter;
+    setSubjectTeachers({});
+    if (!academicSessionId || !schoolClassId || !sectionId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await teacherAPI.getTeacherAssignments({
+          academicSessionId,
+          schoolClassId,
+          sectionId,
+          ...(semesterId && { semesterId }),
+        });
+        if (cancelled) return;
+        const map = {};
+        rows
+          .filter((a) => a.isActive && (a.semesterId || null) === (semesterId || null))
+          .forEach((a) => { map[a.subjectId] = a.teacherId; });
+        setSubjectTeachers(map);
+      } catch (error) {
+        console.error('Error loading subject assignments:', error);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignFilter.academicSessionId, assignFilter.semesterId, assignFilter.schoolClassId, assignFilter.sectionId]);
+
+  const assignEntries = classSubjectList
+    .filter((s) => subjectTeachers[s.id] !== undefined)
+    .map((s) => ({ subjectId: s.id, teacherId: subjectTeachers[s.id] || null }));
+
+  const handleSaveSubjectTeachers = async () => {
+    const { academicSessionId, semesterId, schoolClassId, sectionId } = assignFilter;
+    if (!academicSessionId || !schoolClassId || !sectionId) {
+      alert('Select session, class and section first');
+      return;
+    }
+    if (assignEntries.length === 0) {
+      alert('No changes to save');
+      return;
+    }
+    setAssignSaving(true);
+    setAssignMessage('');
+    try {
+      const result = await teacherAPI.setClassSubjectTeachers({
+        academicSessionId,
+        semesterId: semesterId || null,
+        schoolClassId,
+        sectionId,
+        startDate: new Date().toISOString().split('T')[0],
+        entries: assignEntries,
+      });
+      setAssignMessage(
+        `Saved: ${result.created} assigned, ${result.reactivated} reactivated, ${result.deactivated} unassigned, ${result.skipped} unchanged.` +
+        (result.invalid ? ` ${result.invalid} invalid skipped.` : '')
+      );
+      reloadAll();
+    } catch (error) {
+      setAssignMessage(error.response?.data?.error || 'Error saving assignments');
+    } finally {
+      setAssignSaving(false);
+    }
+  };
 
   const openBulkClassAssign = () => {
     setBulkClassForm({ academicSessionId: '', semesterId: '', startDate: new Date().toISOString().split('T')[0], selections: {} });
@@ -427,26 +503,6 @@ export default function TeacherManagement() {
     },
   ];
 
-  const assignmentColumns = [
-    { key: 'teacherId', label: 'Teacher', render: (v, row) => row.teacher?.teacherProfile?.fullName || teacherName(v) },
-    { key: 'subject', label: 'Subject', render: (v, row) => row.subject?.name },
-    { key: 'schoolClass', label: 'Class', render: (v, row) => `${row.schoolClass?.name} - ${row.section?.name}` },
-    { key: 'semester', label: 'Semester', render: (v, row) => `${row.semester?.name} (${row.academicSession?.name})` },
-    { key: 'isActive', label: 'Status', render: (v) => <span className={`px-2 py-1 rounded-full text-xs ${v ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>{v ? 'Active' : 'Inactive'}</span> },
-    { key: 'actions', label: 'Actions', render: (v, row) => (
-      <div className="flex gap-2">
-        {row.isActive ? (
-          <Button size="sm" variant="danger" onClick={() => handleDeleteAssignment(row.id)}>Remove</Button>
-        ) : (
-          <>
-            <Button size="sm" variant="success" onClick={() => handleReactivateAssignment(row.id, false)}>Activate</Button>
-            <Button size="sm" variant="danger" onClick={() => handlePermanentDeleteAssignment(row.id, false)}>Delete</Button>
-          </>
-        )}
-      </div>
-    ) },
-  ];
-
   const classAssignmentColumns = [
     { key: 'teacherId', label: 'Teacher', render: (v, row) => row.teacher?.teacherProfile?.fullName || teacherName(v) },
     { key: 'schoolClass', label: 'Class', render: (v, row) => `${row.schoolClass?.name} - ${row.section?.name}` },
@@ -472,7 +528,7 @@ export default function TeacherManagement() {
         options={teachers.filter((t) => t.teacherProfile).map((t) => ({ value: t.teacherProfile.id, label: `${t.teacherProfile.fullName} (${t.email})` }))} />
       <Select label="Session" value={form.academicSessionId} required onChange={async (e) => { setForm({ ...form, academicSessionId: e.target.value, semesterId: '' }); await loadSemesters(e.target.value); }}
         options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
-      <Select label="Semester" value={form.semesterId} required onChange={(e) => setForm({ ...form, semesterId: e.target.value })}
+      <Select label="Semester (optional — all terms)" value={form.semesterId} onChange={(e) => setForm({ ...form, semesterId: e.target.value })}
         options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
       <Select label="Class" value={form.schoolClassId} required onChange={async (e) => { setForm({ ...form, schoolClassId: e.target.value, sectionId: '' }); await loadSections(e.target.value); }}
         options={classes.map((c) => ({ value: c.id, label: c.name }))} />
@@ -484,7 +540,7 @@ export default function TeacherManagement() {
       )}
       <Input label="Start Date" type="date" value={form.startDate} required onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
       <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={() => { setIsAssignModalOpen(false); setIsClassAssignModalOpen(false); }}>Cancel</Button>
+        <Button variant="secondary" onClick={() => setIsClassAssignModalOpen(false)}>Cancel</Button>
         <Button type="submit">Assign</Button>
       </div>
     </>
@@ -531,12 +587,59 @@ export default function TeacherManagement() {
       </BulkActionToolbar>
 
       <Card title="Subject Assignments" actions={
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => { setBulkAssignmentForm(emptyBulkAssignment); setIsBulkAssignModalOpen(true); }}>Bulk Assign</Button>
-          <Button onClick={() => { setAssignmentForm(emptyAssignment); setIsAssignModalOpen(true); }}>Add Assignment</Button>
-        </div>
+        <Button variant="secondary" onClick={() => { setBulkAssignmentForm(emptyBulkAssignment); setIsBulkAssignModalOpen(true); }}>Bulk Assign</Button>
       } className="mb-6">
-        <Table columns={assignmentColumns} data={subjectAssignments} emptyMessage="No assignments" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+          <Select label="Session" value={assignFilter.academicSessionId} required
+            onChange={handleAssignSessionChange}
+            options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
+          <Select label="Semester (optional — all terms)" value={assignFilter.semesterId}
+            onChange={(e) => setAssignFilter({ ...assignFilter, semesterId: e.target.value })}
+            options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
+          <Select label="Class" value={assignFilter.schoolClassId} required
+            onChange={handleAssignClassChange}
+            options={classes.map((c) => ({ value: c.id, label: c.name }))} />
+          <Select label="Section" value={assignFilter.sectionId} required
+            onChange={(e) => setAssignFilter({ ...assignFilter, sectionId: e.target.value })}
+            options={assignSections.map((s) => ({ value: s.id, label: s.name }))} />
+        </div>
+        {assignMessage && (
+          <div className="mb-3 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">{assignMessage}</div>
+        )}
+        {!assignFilter.schoolClassId ? (
+          <p className="text-sm text-gray-500">Select a class to view its subjects.</p>
+        ) : classSubjectList.length === 0 ? (
+          <p className="text-sm text-gray-500">No subjects are mapped to this class yet.</p>
+        ) : (
+          <>
+            <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
+              {classSubjectList.map((subject) => (
+                <div key={subject.id} className="flex items-center gap-3">
+                  <span className="w-56 shrink-0 text-sm text-gray-700">{subject.name}</span>
+                  <div className="flex-1">
+                    <Select
+                      value={subjectTeachers[subject.id] || ''}
+                      onChange={(e) => setSubjectTeachers({ ...subjectTeachers, [subject.id]: e.target.value || null })}
+                      options={teacherOptions}
+                      placeholder="— Unassigned —"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between mt-4 gap-3">
+              <p className="text-xs text-gray-500">
+                {!assignFilter.academicSessionId || !assignFilter.sectionId
+                  ? 'Select session and section to save assignments.'
+                  : 'Choose a teacher for each subject, then save. "— Unassigned —" removes the assignment.'}
+              </p>
+              <Button onClick={handleSaveSubjectTeachers}
+                disabled={assignSaving || !assignFilter.academicSessionId || !assignFilter.sectionId || assignEntries.length === 0}>
+                {assignSaving ? 'Saving...' : 'Save Assignments'}
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
 
       <Card title="Class Teacher Assignments" actions={
@@ -565,10 +668,6 @@ export default function TeacherManagement() {
         </form>
       </Modal>
 
-      <Modal isOpen={isAssignModalOpen} onClose={() => setIsAssignModalOpen(false)} title="Add Subject Assignment">
-        <form onSubmit={handleAssignmentSubmit} className="space-y-4">{assignmentFields(assignmentForm, setAssignmentForm, false)}</form>
-      </Modal>
-
       <Modal isOpen={isClassAssignModalOpen} onClose={() => setIsClassAssignModalOpen(false)} title="Assign Class Teacher">
         <form onSubmit={handleClassAssignmentSubmit} className="space-y-4">{assignmentFields(classAssignmentForm, setClassAssignmentForm, true)}</form>
       </Modal>
@@ -581,7 +680,7 @@ export default function TeacherManagement() {
           <Select label="Session" value={bulkAssignmentForm.academicSessionId} required
             onChange={async (e) => { setBulkAssignmentForm({ ...bulkAssignmentForm, academicSessionId: e.target.value, semesterId: '' }); await loadSemesters(e.target.value); }}
             options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
-          <Select label="Semester" value={bulkAssignmentForm.semesterId} required
+          <Select label="Semester (optional — all terms)" value={bulkAssignmentForm.semesterId}
             onChange={(e) => setBulkAssignmentForm({ ...bulkAssignmentForm, semesterId: e.target.value })}
             options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
           <Input label="Start Date" type="date" value={bulkAssignmentForm.startDate} required
@@ -602,7 +701,7 @@ export default function TeacherManagement() {
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setIsBulkAssignModalOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!bulkAssignmentForm.teacherId || !bulkAssignmentForm.academicSessionId || !bulkAssignmentForm.semesterId || bulkAssignmentForm.subjectIds.length === 0 || bulkAssignmentForm.pairValues.length === 0}>
+            <Button type="submit" disabled={!bulkAssignmentForm.teacherId || !bulkAssignmentForm.academicSessionId || bulkAssignmentForm.subjectIds.length === 0 || bulkAssignmentForm.pairValues.length === 0}>
               Create Assignments
             </Button>
           </div>
@@ -662,7 +761,7 @@ export default function TeacherManagement() {
           <Select label="Session" value={bulkClassForm.academicSessionId} required
             onChange={async (e) => { setBulkClassForm({ ...bulkClassForm, academicSessionId: e.target.value, semesterId: '', selections: {} }); await loadSemesters(e.target.value); }}
             options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
-          <Select label="Semester" value={bulkClassForm.semesterId} required
+          <Select label="Semester (optional — all terms)" value={bulkClassForm.semesterId}
             onChange={(e) => setBulkClassForm({ ...bulkClassForm, semesterId: e.target.value })}
             options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
           <Input label="Start Date" type="date" value={bulkClassForm.startDate} required
@@ -692,7 +791,7 @@ export default function TeacherManagement() {
           </p>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setIsBulkClassAssignOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={!bulkClassForm.academicSessionId || !bulkClassForm.semesterId}>Assign</Button>
+            <Button type="submit" disabled={!bulkClassForm.academicSessionId}>Assign</Button>
           </div>
         </form>
       </Modal>

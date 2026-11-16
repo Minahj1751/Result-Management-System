@@ -119,14 +119,14 @@ const getResultSnapshots = async (req, res, next) => {
       where: { id: studentId },
     });
 
-    // Get enrollment details
+    // Get enrollment details (semester-specific or session-level roster)
     const enrollment = await prisma.studentEnrollment.findFirst({
       where: {
         studentId,
         academicSessionId,
-        semesterId,
         schoolClassId,
         sectionId,
+        OR: [{ semesterId }, { semesterId: null }],
       },
       include: {
         academicSession: true,
@@ -186,16 +186,23 @@ const bulkFinalizeResults = async (req, res, next) => {
     const errors = [];
 
     for (const sid of ids) {
-      // Get all enrolled students
-      const enrollments = await prisma.studentEnrollment.findMany({
+      // Get all enrolled students (semester-specific + session-level roster)
+      const enrollmentRows = await prisma.studentEnrollment.findMany({
         where: {
           academicSessionId,
-          semesterId,
           schoolClassId,
           sectionId: sid,
           isActive: true,
+          OR: [{ semesterId }, { semesterId: null }],
         },
       });
+      const enrollmentByStudent = new Map();
+      enrollmentRows
+        .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+        .forEach((e) => {
+          if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+        });
+      const enrollments = [...enrollmentByStudent.values()];
 
       // Only finalize subjects that actually have assessments for this class/section
       const assessments = await prisma.assessment.findMany({

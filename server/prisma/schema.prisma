@@ -128,6 +128,7 @@ model SchoolClass {
   updatedAt DateTime @updatedAt
 
   sections            Section[]
+  classSubjects       ClassSubject[]
   studentEnrollments  StudentEnrollment[]
   teacherAssignments  TeacherAssignment[]
   classTeacherAssignments ClassTeacherAssignment[]
@@ -170,8 +171,24 @@ model Subject {
   teacherAssignments TeacherAssignment[]
   assessments        Assessment[]
   resultSnapshots    ResultSnapshot[]
+  classSubjects      ClassSubject[]
 
   @@map("subjects")
+}
+
+// Class-wise subject mapping (which subjects a class offers)
+model ClassSubject {
+  id            String      @id @default(cuid())
+  schoolClassId String
+  schoolClass   SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  subjectId     String
+  subject       Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@unique([schoolClassId, subjectId])
+  @@index([schoolClassId])
+  @@index([subjectId])
+  @@map("class_subjects")
 }
 
 // Student enrollment in a class/section
@@ -181,13 +198,14 @@ model StudentEnrollment {
   student           Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   academicSessionId String
   academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
-  semesterId        String
-  semester          Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  // NULL = session-level class roster (applies to all semesters/exams in the session)
+  semesterId        String?
+  semester          Semester? @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   schoolClassId     String
   schoolClass       SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
   sectionId         String
   section           Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  rollNumber        Int
+  rollNumber        Int?
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -210,8 +228,9 @@ model TeacherAssignment {
   subject           Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   academicSessionId String
   academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
-  semesterId        String
-  semester          Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  // NULL = applies to all semesters/exams in the session
+  semesterId        String?
+  semester          Semester? @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   schoolClassId     String
   schoolClass       SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
   sectionId         String
@@ -239,8 +258,9 @@ model ClassTeacherAssignment {
   teacher           TeacherProfile @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   academicSessionId String
   academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
-  semesterId        String
-  semester          Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  // NULL = applies to all semesters/exams in the session
+  semesterId        String?
+  semester          Semester? @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   schoolClassId     String
   schoolClass       SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
   sectionId         String
@@ -292,7 +312,7 @@ model Assessment {
   subjectId           String
   subject             Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   maximumMarks        Decimal            @db.Decimal(5, 2)
-  defaultDate         DateTime
+  defaultDate         DateTime?
   submissionStatus    SubmissionStatus   @default(DRAFT)
   publicationStatus   PublicationStatus  @default(DRAFT)
   createdAt           DateTime           @default(now())

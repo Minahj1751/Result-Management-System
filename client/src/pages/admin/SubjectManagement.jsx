@@ -6,6 +6,8 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Modal from '../../components/Modal';
+import MultiSelect from '../../components/MultiSelect';
+import Select from '../../components/Select';
 import Table from '../../components/Table';
 
 export default function SubjectManagement() {
@@ -20,6 +22,11 @@ export default function SubjectManagement() {
   const [importPreview, setImportPreview] = useState(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importMessage, setImportMessage] = useState('');
+  const [isClassSubjectOpen, setIsClassSubjectOpen] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [classSubjects, setClassSubjects] = useState([]);
+  const [selectedClassId, setSelectedClassId] = useState('');
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
 
   useEffect(() => {
     loadSubjects();
@@ -115,6 +122,41 @@ export default function SubjectManagement() {
     }
   };
 
+  const openClassSubjects = async () => {
+    try {
+      const [classesData, mappings] = await Promise.all([
+        academicAPI.getClasses(),
+        academicAPI.getClassSubjects(),
+      ]);
+      setClasses(classesData);
+      setClassSubjects(mappings);
+      setSelectedClassId('');
+      setSelectedSubjectIds([]);
+      setIsClassSubjectOpen(true);
+    } catch (error) {
+      console.error('Error loading class subjects:', error);
+    }
+  };
+
+  const handleClassChange = (classId) => {
+    setSelectedClassId(classId);
+    const mapped = classSubjects.filter((m) => m.schoolClassId === classId).map((m) => m.subjectId);
+    setSelectedSubjectIds(mapped);
+  };
+
+  const handleSaveClassSubjects = async () => {
+    try {
+      const mappings = await academicAPI.setClassSubjects(selectedClassId, selectedSubjectIds);
+      setClassSubjects((prev) => [
+        ...prev.filter((m) => m.schoolClassId !== selectedClassId),
+        ...mappings,
+      ]);
+      alert('Class subjects saved');
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error saving class subjects');
+    }
+  };
+
   const handleDelete = async (subjectId) => {
     if (!confirm('Are you sure you want to delete this subject?')) return;
     try {
@@ -154,6 +196,7 @@ export default function SubjectManagement() {
         title="Subjects"
         actions={
           <div className="flex gap-2">
+            <Button variant="secondary" onClick={openClassSubjects}>Class Subjects</Button>
             <Button variant="secondary" onClick={() => { resetImport(); setIsImportModalOpen(true); }}>Import</Button>
             <Button variant="secondary" onClick={handleExportSubjects}>Export</Button>
             <Button onClick={() => setIsModalOpen(true)}>Add Subject</Button>
@@ -237,6 +280,54 @@ export default function SubjectManagement() {
                   <Button onClick={handleConfirmSubjectImport} disabled={importLoading}>{importLoading ? 'Importing...' : 'Confirm Import'}</Button>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal isOpen={isClassSubjectOpen} onClose={() => setIsClassSubjectOpen(false)} title="Class-wise Subject Selection">
+        <div className="space-y-4">
+          <Select label="Class" value={selectedClassId} required
+            onChange={(e) => handleClassChange(e.target.value)}
+            options={classes.map((c) => ({ value: c.id, label: c.name }))} />
+          {selectedClassId && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subjects for this class</label>
+                <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
+                  {subjects.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedSubjectIds.includes(s.id)}
+                        onChange={(e) => setSelectedSubjectIds((prev) =>
+                          e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                        )}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      {s.name}{s.code ? ` (${s.code})` : ''}
+                    </label>
+                  ))}
+                  {subjects.length === 0 && <p className="px-3 py-2 text-sm text-gray-500">No subjects found</p>}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">{selectedSubjectIds.length} subject(s) selected</p>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setIsClassSubjectOpen(false)}>Cancel</Button>
+                <Button onClick={handleSaveClassSubjects} disabled={selectedSubjectIds.length === 0}>Save</Button>
+              </div>
+            </>
+          )}
+          {classSubjects.length > 0 && (
+            <div className="border-t pt-3">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Current Mapping</h4>
+              <div className="max-h-48 overflow-y-auto space-y-1">
+                {classes.map((c) => {
+                  const names = classSubjects.filter((m) => m.schoolClassId === c.id).map((m) => m.subject?.name).filter(Boolean);
+                  if (names.length === 0) return null;
+                  return <div key={c.id} className="text-sm"><span className="font-medium">{c.name}:</span> {names.join(', ')}</div>;
+                })}
+              </div>
             </div>
           )}
         </div>

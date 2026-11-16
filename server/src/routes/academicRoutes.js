@@ -42,4 +42,8 @@ router.post('/subjects', authenticate, isAdmin, createSubjectValidation, validat
 router.patch('/subjects/:id', authenticate, isAdmin, idParamValidation, validate, academicController.updateSubject);
 router.delete('/subjects/:id', authenticate, isAdmin, idParamValidation, validate, academicController.deleteSubject);
 
+// Class-wise subject mapping
+router.get('/class-subjects', authenticate, academicController.getClassSubjects);
+router.put('/class-subjects', authenticate, isAdmin, academicController.setClassSubjects);
+
 module.exports = router;

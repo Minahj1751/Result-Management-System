@@ -57,9 +57,7 @@ const createAssessmentValidation = [
     .isFloat({ min: 0 })
     .withMessage('Maximum marks must be a positive number'),
   body('defaultDate')
-    .trim()
-    .notEmpty()
-    .withMessage('Default date is required')
+    .optional({ checkFalsy: true })
     .isISO8601()
     .withMessage('Invalid date format'),
 ];
@@ -88,9 +86,7 @@ const bulkCreateAssessmentValidation = [
     .isFloat({ min: 0 })
     .withMessage('Maximum marks must be a positive number'),
   body('defaultDate')
-    .trim()
-    .notEmpty()
-    .withMessage('Default date is required')
+    .optional({ checkFalsy: true })
     .isISO8601()
     .withMessage('Invalid date format'),
   body('combinations')

@@ -139,9 +139,8 @@ const createTeacherAssignmentValidation = [
     .notEmpty()
     .withMessage('Academic session ID is required'),
   body('semesterId')
-    .trim()
-    .notEmpty()
-    .withMessage('Semester ID is required'),
+    .optional()
+    .trim(),
   body('schoolClassId')
     .trim()
     .notEmpty()
@@ -167,9 +166,8 @@ const createClassTeacherAssignmentValidation = [
     .notEmpty()
     .withMessage('Academic session ID is required'),
   body('semesterId')
-    .trim()
-    .notEmpty()
-    .withMessage('Semester ID is required'),
+    .optional()
+    .trim(),
   body('schoolClassId')
     .trim()
     .notEmpty()

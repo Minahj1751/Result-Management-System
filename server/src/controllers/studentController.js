@@ -9,9 +9,10 @@ const getStudents = async (req, res, next) => {
 
     const enrollmentConditions = [];
     if (academicSessionId) enrollmentConditions.push({ academicSessionId });
-    if (semesterId) enrollmentConditions.push({ semesterId });
     if (schoolClassId) enrollmentConditions.push({ schoolClassId });
     if (sectionId) enrollmentConditions.push({ sectionId });
+    // Semester filter matches semester-specific rows AND the session-level roster
+    if (semesterId) enrollmentConditions.push({ OR: [{ semesterId }, { semesterId: null }] });
 
     const where = {
       ...(includeInactive !== 'true' ? { isActive: true } : {}),
@@ -183,16 +184,33 @@ const createEnrollment = async (req, res, next) => {
   try {
     const { studentId, academicSessionId, semesterId, schoolClassId, sectionId, rollNumber } = req.body;
 
-    const roll = parseInt(rollNumber, 10);
-    if (!Number.isInteger(roll) || roll < 1) {
+    // semesterId is optional: NULL enrollments are the session-level class roster
+    const roll = rollNumber === undefined || rollNumber === null || rollNumber === ''
+      ? null
+      : parseInt(rollNumber, 10);
+    if (roll !== null && (!Number.isInteger(roll) || roll < 1)) {
       return res.status(400).json({ error: 'Roll number must be a positive integer' });
+    }
+
+    // Prevent duplicate roster/enrollment rows (NULL semester bypasses the DB unique index)
+    const duplicate = await prisma.studentEnrollment.findFirst({
+      where: {
+        studentId,
+        academicSessionId,
+        schoolClassId,
+        sectionId,
+        ...(semesterId ? { semesterId } : { semesterId: null }),
+      },
+    });
+    if (duplicate) {
+      return res.status(409).json({ error: 'Student is already enrolled for this class/section' });
     }
 
     const enrollment = await prisma.studentEnrollment.create({
       data: {
         studentId,
         academicSessionId,
-        semesterId,
+        semesterId: semesterId || null,
         schoolClassId,
         sectionId,
         rollNumber: roll,

@@ -91,6 +91,16 @@ export const academicAPI = {
     return response.data;
   },
 
+  // Class-wise subject mapping
+  getClassSubjects: async (schoolClassId) => {
+    const response = await api.get('/academic/class-subjects', { params: schoolClassId ? { schoolClassId } : {} });
+    return response.data;
+  },
+  setClassSubjects: async (schoolClassId, subjectIds) => {
+    const response = await api.put('/academic/class-subjects', { schoolClassId, subjectIds });
+    return response.data;
+  },
+
   // Assessment Categories
   getAssessmentCategories: async () => {
     const response = await api.get('/assessments/categories');

@@ -16,7 +16,8 @@ const assertClassTeacherAssigned = async (req, { academicSessionId, semesterId, 
     where: {
       teacherId: profile.id,
       academicSessionId,
-      semesterId,
+      // Session-level class teacher assignments (semesterId NULL) apply to all terms
+      OR: [{ semesterId }, { semesterId: null }],
       schoolClassId,
       sectionId,
       isActive: true,
@@ -88,20 +89,28 @@ const getClassAttendance = async (req, res, next) => {
       sectionId,
     });
 
-    // Get enrolled students
-    const enrollments = await prisma.studentEnrollment.findMany({
+    // Get enrolled students: semester-specific + session-level roster, deduped
+    const enrollmentRows = await prisma.studentEnrollment.findMany({
       where: {
         academicSessionId,
-        semesterId,
         schoolClassId,
         sectionId,
         isActive: true,
+        OR: [{ semesterId }, { semesterId: null }],
       },
       include: {
         student: true,
       },
-      orderBy: { rollNumber: 'asc' },
     });
+    const enrollmentByStudent = new Map();
+    enrollmentRows
+      .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+      .forEach((e) => {
+        if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+      });
+    const enrollments = [...enrollmentByStudent.values()].sort(
+      (a, b) => (a.rollNumber ?? 999999) - (b.rollNumber ?? 999999)
+    );
 
     // Get existing attendance records
     const attendanceRecords = await prisma.attendanceRecord.findMany({

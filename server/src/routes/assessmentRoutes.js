@@ -21,7 +21,9 @@ router.get('/', authenticate, assessmentController.getAssessments);
 router.get('/eligible-subjects', authenticate, assessmentController.getEligibleSubjects);
 router.post('/', authenticate, isAdmin, createAssessmentValidation, validate, assessmentController.createAssessment);
 router.post('/bulk', authenticate, isAdmin, bulkCreateAssessmentValidation, validate, assessmentController.bulkCreateAssessments);
+router.patch('/bulk-status', authenticate, isAdmin, assessmentController.bulkUpdateAssessmentStatus);
 router.patch('/:id', authenticate, isAdmin, idParamValidation, validate, assessmentController.updateAssessment);
+router.patch('/:id/date', authenticate, idParamValidation, validate, assessmentController.updateAssessmentDate);
 router.delete('/:id', authenticate, isAdmin, idParamValidation, validate, assessmentController.deleteAssessment);
 
 module.exports = router;

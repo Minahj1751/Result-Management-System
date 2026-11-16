@@ -415,6 +415,68 @@ const updateSubject = async (req, res, next) => {
 };
 
 /**
+ * Get class-wise subject mappings
+ */
+const getClassSubjects = async (req, res, next) => {
+  try {
+    const { schoolClassId } = req.query;
+    const mappings = await prisma.classSubject.findMany({
+      where: schoolClassId ? { schoolClassId } : {},
+      include: { schoolClass: true, subject: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(mappings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Set subjects for a class (replaces existing mapping)
+ */
+const setClassSubjects = async (req, res, next) => {
+  try {
+    const { schoolClassId, subjectIds } = req.body;
+
+    if (!schoolClassId) {
+      return res.status(400).json({ error: 'schoolClassId is required' });
+    }
+    if (!Array.isArray(subjectIds)) {
+      return res.status(400).json({ error: 'subjectIds must be an array' });
+    }
+
+    const schoolClass = await prisma.schoolClass.findUnique({ where: { id: schoolClassId } });
+    if (!schoolClass) {
+      return res.status(400).json({ error: 'Class not found' });
+    }
+
+    const subjects = await prisma.subject.findMany({
+      where: { id: { in: subjectIds } },
+      select: { id: true },
+    });
+    const validIds = new Set(subjects.map((s) => s.id));
+    const uniqueIds = [...new Set(subjectIds)].filter((id) => validIds.has(id));
+
+    await prisma.$transaction([
+      prisma.classSubject.deleteMany({ where: { schoolClassId } }),
+      prisma.classSubject.createMany({
+        data: uniqueIds.map((subjectId) => ({ schoolClassId, subjectId })),
+        skipDuplicates: true,
+      }),
+    ]);
+
+    const mappings = await prisma.classSubject.findMany({
+      where: { schoolClassId },
+      include: { subject: true },
+    });
+
+    res.json(mappings);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Delete subject (only if it has no dependent records)
  */
 const deleteSubject = async (req, res, next) => {
@@ -461,4 +523,6 @@ module.exports = {
   createSubject,
   updateSubject,
   deleteSubject,
+  getClassSubjects,
+  setClassSubjects,
 };

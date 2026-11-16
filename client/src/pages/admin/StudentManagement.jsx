@@ -15,24 +15,19 @@ import BulkActionToolbar from '../../components/BulkActionToolbar';
 import ConfirmDialog from '../../components/ConfirmDialog';
 
 const emptyStudent = { studentId: '', admissionNumber: '', fullName: '', dateOfBirth: '', guardianName: '', guardianPhone: '' };
-const emptyEnrollment = { studentId: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '', rollNumber: '' };
 
 export default function StudentManagement() {
   const [students, setStudents] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [sessions, setSessions] = useState([]);
-  const [semesters, setSemesters] = useState([]);
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isEnrollmentModalOpen, setIsEnrollmentModalOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [enrollingStudent, setEnrollingStudent] = useState(null);
-  const [filter, setFilter] = useState({ search: '', academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '' });
+  const [filter, setFilter] = useState({ search: '', academicSessionId: '', schoolClassId: '', sectionId: '' });
   const [formData, setFormData] = useState(emptyStudent);
-  const [enrollmentForm, setEnrollmentForm] = useState(emptyEnrollment);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkConfirm, setBulkConfirm] = useState(null); // 'activate' | 'deactivate'
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -42,7 +37,7 @@ export default function StudentManagement() {
   const [importMessage, setImportMessage] = useState('');
 
   useEffect(() => { loadInitial(); }, []);
-  useEffect(() => { loadData(1); }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId]);
+  useEffect(() => { loadData(1); }, [filter.academicSessionId, filter.schoolClassId, filter.sectionId]);
   useEffect(() => { setSelectedIds(new Set()); }, [filter, pagination.page, pagination.limit]);
 
   const loadInitial = async () => {
@@ -79,9 +74,8 @@ export default function StudentManagement() {
     setFilter((f) => ({ ...f, search }));
   };
 
-  const handleSessionFilter = async (academicSessionId) => {
-    setFilter((f) => ({ ...f, academicSessionId, semesterId: '' }));
-    setSemesters(academicSessionId ? await academicAPI.getSemesters(academicSessionId) : []);
+  const handleSessionFilter = (academicSessionId) => {
+    setFilter((f) => ({ ...f, academicSessionId }));
   };
 
   const handleClassFilter = async (schoolClassId) => {
@@ -153,32 +147,6 @@ export default function StudentManagement() {
       loadData();
     } catch (error) {
       alert('Error updating student status');
-    }
-  };
-
-  const openEnrollment = async (student) => {
-    setEnrollingStudent(student);
-    setEnrollmentForm({ ...emptyEnrollment, studentId: student.id });
-    const [sems, secs] = await Promise.all([
-      enrollmentForm.academicSessionId ? academicAPI.getSemesters(enrollmentForm.academicSessionId) : Promise.resolve([]),
-      Promise.resolve([]),
-    ]);
-    setSemesters(sems);
-    setSections(secs);
-    setIsEnrollmentModalOpen(true);
-  };
-
-  const handleEnrollmentSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      await studentAPI.createEnrollment({
-        ...enrollmentForm,
-        rollNumber: parseInt(enrollmentForm.rollNumber),
-      });
-      setIsEnrollmentModalOpen(false);
-      loadData();
-    } catch (error) {
-      alert(error.response?.data?.error || 'Error creating enrollment');
     }
   };
 
@@ -277,7 +245,6 @@ export default function StudentManagement() {
       render: (val, row) => (
         <div className="flex gap-2 flex-wrap">
           <Button size="sm" onClick={() => handleEdit(row)}>Edit</Button>
-          <Button size="sm" variant="secondary" onClick={() => openEnrollment(row)}>Enroll</Button>
           <Button size="sm" variant={row.isActive ? 'secondary' : 'success'} onClick={() => handleToggleStatus(row)}>
             {row.isActive ? 'Deactivate' : 'Activate'}
           </Button>
@@ -291,10 +258,9 @@ export default function StudentManagement() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Student Management</h1>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <SearchInput placeholder="Search name / ID..." value={filter.search} onSearch={handleSearch} />
           <Select placeholder="Session" value={filter.academicSessionId} onChange={(e) => handleSessionFilter(e.target.value)} options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
-          <Select placeholder="Semester" value={filter.semesterId} onChange={(e) => setFilter({ ...filter, semesterId: e.target.value })} options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
           <Select placeholder="Class" value={filter.schoolClassId} onChange={(e) => handleClassFilter(e.target.value)} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
           <Select placeholder="Section" value={filter.sectionId} onChange={(e) => setFilter({ ...filter, sectionId: e.target.value })} options={sections.map((s) => ({ value: s.id, label: s.name }))} />
           <div className="flex gap-2">
@@ -355,37 +321,6 @@ export default function StudentManagement() {
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancel</Button>
             <Button type="submit">{isEdit ? 'Update' : 'Save'}</Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal isOpen={isEnrollmentModalOpen} onClose={() => setIsEnrollmentModalOpen(false)} title={`Enroll ${enrollingStudent?.fullName || ''}`}>
-        <form onSubmit={handleEnrollmentSubmit} className="space-y-4">
-          <Select label="Session" value={enrollmentForm.academicSessionId} required
-            onChange={async (e) => {
-              const sid = e.target.value;
-              setEnrollmentForm({ ...enrollmentForm, academicSessionId: sid, semesterId: '' });
-              setSemesters(sid ? await academicAPI.getSemesters(sid) : []);
-            }}
-            options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
-          <Select label="Semester" value={enrollmentForm.semesterId} required
-            onChange={(e) => setEnrollmentForm({ ...enrollmentForm, semesterId: e.target.value })}
-            options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
-          <Select label="Class" value={enrollmentForm.schoolClassId} required
-            onChange={async (e) => {
-              const cid = e.target.value;
-              setEnrollmentForm({ ...enrollmentForm, schoolClassId: cid, sectionId: '' });
-              setSections(cid ? await academicAPI.getSections(cid) : []);
-            }}
-            options={classes.map((c) => ({ value: c.id, label: c.name }))} />
-          <Select label="Section" value={enrollmentForm.sectionId} required
-            onChange={(e) => setEnrollmentForm({ ...enrollmentForm, sectionId: e.target.value })}
-            options={sections.map((s) => ({ value: s.id, label: s.name }))} />
-          <Input label="Roll Number" type="number" name="rollNumber" value={enrollmentForm.rollNumber} required
-            onChange={(e) => setEnrollmentForm({ ...enrollmentForm, rollNumber: e.target.value })} />
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setIsEnrollmentModalOpen(false)}>Cancel</Button>
-            <Button type="submit">Enroll</Button>
           </div>
         </form>
       </Modal>
