@@ -1,5 +1,62 @@
 const prisma = require('../config/database');
 
+const buildAssessmentWhere = ({
+  academicSessionId,
+  semesterId,
+  schoolClassId,
+  sectionId,
+  subjectId,
+  categoryId,
+  search,
+} = {}) => {
+  const term = typeof search === 'string' ? search.trim() : '';
+
+  return {
+    ...(academicSessionId && { academicSessionId }),
+    ...(semesterId && { semesterId }),
+    ...(schoolClassId && { schoolClassId }),
+    ...(sectionId && { sectionId }),
+    ...(subjectId && { subjectId }),
+    ...(categoryId && { categoryId }),
+    ...(term && {
+      OR: [
+        { name: { contains: term } },
+        { subject: { name: { contains: term } } },
+        { schoolClass: { name: { contains: term } } },
+      ],
+    }),
+  };
+};
+
+const uniqueIds = (value) => [
+  ...new Set(Array.isArray(value) ? value.filter((id) => typeof id === 'string' && id) : []),
+];
+
+const getBulkSelectionWhere = ({ ids, filters, selectAll, excludedIds } = {}) => {
+  if (selectAll) {
+    const where = buildAssessmentWhere(filters || {});
+    const exclusions = uniqueIds(excludedIds);
+    if (exclusions.length > 0) {
+      where.id = { notIn: exclusions };
+    }
+    return where;
+  }
+
+  const selectedIds = uniqueIds(ids);
+  if (selectedIds.length === 0) {
+    const error = new Error('No assessments selected');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (selectedIds.length > 1000) {
+    const error = new Error('Too many assessments selected (max 1000)');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { id: { in: selectedIds } };
+};
+
 /**
  * Get assessment categories
  */
@@ -43,25 +100,10 @@ const createAssessmentCategory = async (req, res, next) => {
 const getAssessments = async (req, res, next) => {
   try {
     const {
-      academicSessionId, semesterId, schoolClassId, sectionId, subjectId, categoryId,
-      page = 1, limit = 20, search, sortBy = 'defaultDate', sortOrder = 'asc',
+      page = 1, limit = 20, sortBy = 'defaultDate', sortOrder = 'asc',
     } = req.query;
 
-    const where = {
-      ...(academicSessionId && { academicSessionId }),
-      ...(semesterId && { semesterId }),
-      ...(schoolClassId && { schoolClassId }),
-      ...(sectionId && { sectionId }),
-      ...(subjectId && { subjectId }),
-      ...(categoryId && { categoryId }),
-      ...(search && {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { subject: { name: { contains: search, mode: 'insensitive' } } },
-          { schoolClass: { name: { contains: search, mode: 'insensitive' } } },
-        ],
-      }),
-    };
+    const where = buildAssessmentWhere(req.query);
 
     const sortable = ['name', 'maximumMarks', 'defaultDate', 'createdAt'];
     const orderField = sortable.includes(sortBy) ? sortBy : 'defaultDate';
@@ -442,21 +484,85 @@ const deleteAssessmentCategory = async (req, res, next) => {
  */
 const bulkUpdateAssessmentStatus = async (req, res, next) => {
   try {
-    const { ids, submissionStatus } = req.body;
+    const { submissionStatus } = req.body;
 
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'ids must be a non-empty array' });
-    }
     if (!['DRAFT', 'SUBMITTED', 'REVIEWED', 'APPROVED'].includes(submissionStatus)) {
       return res.status(400).json({ error: 'Invalid submissionStatus' });
     }
 
+    const where = getBulkSelectionWhere(req.body);
     const result = await prisma.assessment.updateMany({
-      where: { id: { in: ids } },
+      where,
       data: { submissionStatus },
     });
 
     res.json({ updated: result.count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bulk update editable assessment fields for selected assessments
+ */
+const bulkUpdateAssessments = async (req, res, next) => {
+  try {
+    const { maximumMarks, defaultDate, clearDefaultDate } = req.body;
+    const data = {};
+
+    if (maximumMarks !== undefined && maximumMarks !== null && maximumMarks !== '') {
+      const marks = parseFloat(maximumMarks);
+      if (!Number.isFinite(marks) || marks < 0) {
+        return res.status(400).json({ error: 'Maximum marks must be a non-negative number' });
+      }
+      data.maximumMarks = marks;
+    }
+
+    if (clearDefaultDate === true || defaultDate === null) {
+      data.defaultDate = null;
+    } else if (defaultDate !== undefined && defaultDate !== '') {
+      const date = new Date(defaultDate);
+      if (Number.isNaN(date.getTime())) {
+        return res.status(400).json({ error: 'Invalid date format' });
+      }
+      data.defaultDate = date;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    const where = getBulkSelectionWhere(req.body);
+    const result = await prisma.assessment.updateMany({ where, data });
+
+    res.json({ updated: result.count });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bulk delete selected assessments and their marks entries
+ */
+const bulkDeleteAssessments = async (req, res, next) => {
+  try {
+    const where = getBulkSelectionWhere(req.body);
+    const assessments = await prisma.assessment.findMany({
+      where,
+      select: { id: true },
+    });
+    const ids = assessments.map((assessment) => assessment.id);
+
+    if (ids.length === 0) {
+      return res.json({ deleted: 0 });
+    }
+
+    const [, result] = await prisma.$transaction([
+      prisma.marksEntry.deleteMany({ where: { assessmentId: { in: ids } } }),
+      prisma.assessment.deleteMany({ where: { id: { in: ids } } }),
+    ]);
+
+    res.json({ deleted: result.count });
   } catch (error) {
     next(error);
   }
@@ -550,6 +656,8 @@ module.exports = {
   createAssessment,
   bulkCreateAssessments,
   bulkUpdateAssessmentStatus,
+  bulkUpdateAssessments,
+  bulkDeleteAssessments,
   updateAssessment,
   updateAssessmentDate,
   deleteAssessment,

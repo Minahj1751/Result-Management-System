@@ -187,9 +187,11 @@ const generateMarksheetHTML = async (data) => {
       <tr>
         <td class="subject-name">${snapshot.subject.name}</td>
         ${marksCells}
+        <!-- Score % / Grade / GPA columns hidden from PDF
         <td class="result-cell">${pctDisplay}</td>
         <td class="result-cell">${snapshot.grade || '-'}</td>
         <td class="result-cell">${gpDisplay}</td>
+        -->
       </tr>
     `;
   }).join('');
@@ -216,15 +218,19 @@ const generateMarksheetHTML = async (data) => {
   const summaryHtml = summary.averagePercentage !== null ? `
     <tr class="summary-row">
       <td class="subject-name"><strong>Overall</strong></td>
-      <td class="result-cell" colspan="${Math.max(totalAssessmentCols - 3, 1)}"></td>
+      <td class="result-cell" colspan="${Math.max(totalAssessmentCols, 1)}"></td>
+      <!-- Score % / Grade / GPA columns hidden from PDF
       <td class="result-cell"><strong>${summary.averagePercentage.toFixed(schoolSettings?.decimalPrecision || 2)}%</strong></td>
       <td class="result-cell"><strong>${overallGrade || '-'}</strong></td>
       <td class="result-cell"><strong>${summary.gpa !== null ? summary.gpa.toFixed(2) : '-'}</strong></td>
+      -->
     </tr>
     <tr class="status-row">
-      <td colspan="${totalAssessmentCols + 4}" class="status-cell">
+      <td colspan="${totalAssessmentCols + 1}" class="status-cell">
         Result: <strong>${summary.resultStatus}</strong>
+        <!-- GPA hidden from PDF
         ${summary.gpa !== null ? ` &nbsp;|&nbsp; GPA: <strong>${summary.gpa.toFixed(2)}</strong>` : ''}
+        -->
       </td>
     </tr>
   ` : '';

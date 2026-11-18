@@ -47,7 +47,12 @@ export default function AssessmentManagement() {
   const [bulkResult, setBulkResult] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  const [excludedIds, setExcludedIds] = useState(new Set());
   const [bulkStatusValue, setBulkStatusValue] = useState('');
+  const [isBulkEditModalOpen, setIsBulkEditModalOpen] = useState(false);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [bulkEditForm, setBulkEditForm] = useState({ maximumMarks: '', defaultDate: '', clearDefaultDate: false });
 
   const [formSemesters, setFormSemesters] = useState([]);
   const [formSections, setFormSections] = useState([]);
@@ -97,9 +102,15 @@ export default function AssessmentManagement() {
   useEffect(() => {
     loadAssessments(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId]);
+  }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId, filter.search]);
 
-  useEffect(() => { setSelectedIds(new Set()); }, [pagination.page, pagination.limit, filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId]);
+  useEffect(() => { setSelectedIds(new Set()); }, [pagination.page, pagination.limit]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setExcludedIds(new Set());
+    setSelectAllMatching(false);
+  }, [filter.academicSessionId, filter.semesterId, filter.schoolClassId, filter.sectionId, filter.subjectId, filter.categoryId, filter.search]);
 
   const handleSearch = (search) => {
     setFilter((f) => ({ ...f, search }));
@@ -313,7 +324,18 @@ export default function AssessmentManagement() {
     }
   };
 
+  const isAssessmentSelected = (id) => (selectAllMatching ? !excludedIds.has(id) : selectedIds.has(id));
+  const selectedCount = selectAllMatching ? Math.max(pagination.total - excludedIds.size, 0) : selectedIds.size;
+
   const toggleSelect = (id) => {
+    if (selectAllMatching) {
+      setExcludedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -321,8 +343,17 @@ export default function AssessmentManagement() {
     });
   };
 
-  const allPageSelected = assessments.length > 0 && assessments.every((a) => selectedIds.has(a.id));
+  const allPageSelected = assessments.length > 0 && assessments.every((a) => isAssessmentSelected(a.id));
   const toggleSelectAll = () => {
+    if (selectAllMatching) {
+      setExcludedIds((prev) => {
+        const next = new Set(prev);
+        if (allPageSelected) assessments.forEach((a) => next.add(a.id));
+        else assessments.forEach((a) => next.delete(a.id));
+        return next;
+      });
+      return;
+    }
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allPageSelected) assessments.forEach((a) => next.delete(a.id));
@@ -331,16 +362,88 @@ export default function AssessmentManagement() {
     });
   };
 
+  const toggleSelectAllMatching = () => {
+    setSelectAllMatching((prev) => !prev);
+    setSelectedIds(new Set());
+    setExcludedIds(new Set());
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setExcludedIds(new Set());
+    setSelectAllMatching(false);
+  };
+
+  const buildSelectionPayload = () => {
+    if (selectAllMatching) {
+      return {
+        selectAll: true,
+        filters: cleanParams({ ...filter }),
+        excludedIds: [...excludedIds],
+      };
+    }
+    return { ids: [...selectedIds] };
+  };
+
+  const openBulkEditModal = () => {
+    setBulkEditForm({ maximumMarks: '', defaultDate: '', clearDefaultDate: false });
+    setIsBulkEditModalOpen(true);
+  };
+
+  const handleBulkEditSubmit = async (e) => {
+    e.preventDefault();
+    const hasMaximumMarks = bulkEditForm.maximumMarks !== '';
+    const hasDefaultDate = bulkEditForm.defaultDate !== '';
+
+    if (!hasMaximumMarks && !hasDefaultDate && !bulkEditForm.clearDefaultDate) {
+      alert('Enter at least one field to update');
+      return;
+    }
+    if (hasMaximumMarks && (!Number.isFinite(parseFloat(bulkEditForm.maximumMarks)) || parseFloat(bulkEditForm.maximumMarks) < 0)) {
+      alert('Maximum marks must be a non-negative number');
+      return;
+    }
+
+    const payload = buildSelectionPayload();
+    if (hasMaximumMarks) payload.maximumMarks = bulkEditForm.maximumMarks;
+    if (bulkEditForm.clearDefaultDate) payload.clearDefaultDate = true;
+    else if (hasDefaultDate) payload.defaultDate = bulkEditForm.defaultDate;
+
+    try {
+      const result = await assessmentAPI.bulkUpdateAssessments(payload);
+      alert(`Updated ${result.updated} assessment(s)`);
+      setIsBulkEditModalOpen(false);
+      clearSelection();
+      loadAssessments();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error updating assessments');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    try {
+      const result = await assessmentAPI.bulkDeleteAssessments(buildSelectionPayload());
+      alert(`Deleted ${result.deleted} assessment(s)`);
+      clearSelection();
+      loadAssessments(1);
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error deleting assessments');
+    }
+  };
+
   const handleBulkStatus = async () => {
     if (!bulkStatusValue) {
       alert('Select a status first');
       return;
     }
     try {
-      const result = await assessmentAPI.bulkUpdateStatus([...selectedIds], bulkStatusValue);
+      const result = await assessmentAPI.bulkUpdateStatus({
+        ...buildSelectionPayload(),
+        submissionStatus: bulkStatusValue,
+      });
       alert(`Updated ${result.updated} assessment(s)`);
-      setSelectedIds(new Set());
       setBulkStatusValue('');
+      clearSelection();
       loadAssessments();
     } catch (error) {
       alert(error.response?.data?.error || 'Error updating assessments');
@@ -357,7 +460,7 @@ export default function AssessmentManagement() {
     {
       key: 'select', label: '',
       render: (val, row) => (
-        <input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelect(row.id)} className="w-4 h-4 text-blue-600" />
+        <input type="checkbox" checked={isAssessmentSelected(row.id)} onChange={() => toggleSelect(row.id)} className="w-4 h-4 text-blue-600" />
       ),
     },
     { key: 'name', label: 'Assessment' },
@@ -448,11 +551,20 @@ export default function AssessmentManagement() {
       <Card title="Assessments">
         {loading ? <div className="text-center py-8">Loading...</div> : (
           <>
-            <div className="mb-3">
+            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2">
               <label className="text-sm text-gray-600 inline-flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="w-4 h-4 text-blue-600" />
                 Select all on this page
               </label>
+              {pagination.total > 0 && (
+                <label className="text-sm text-gray-600 inline-flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={selectAllMatching} onChange={toggleSelectAllMatching} className="w-4 h-4 text-blue-600" />
+                  Select all {pagination.total} matching assessment(s)
+                </label>
+              )}
+              {selectAllMatching && excludedIds.size > 0 && (
+                <span className="text-xs text-gray-500">{excludedIds.size} excluded</span>
+              )}
             </div>
             <Table columns={assessmentColumns} data={assessments} emptyMessage="No assessments match the current filters" />
             <Pagination
@@ -464,7 +576,7 @@ export default function AssessmentManagement() {
         )}
       </Card>
 
-      <BulkActionToolbar count={selectedIds.size} onClear={() => setSelectedIds(new Set())}>
+      <BulkActionToolbar count={selectedCount} onClear={clearSelection}>
         <Select value={bulkStatusValue} onChange={(e) => setBulkStatusValue(e.target.value)}
           options={[
             { value: 'DRAFT', label: 'Draft' },
@@ -475,6 +587,8 @@ export default function AssessmentManagement() {
           placeholder="Set status..."
           className="w-40" />
         <Button size="sm" onClick={handleBulkStatus} disabled={!bulkStatusValue}>Apply</Button>
+        <Button size="sm" variant="secondary" onClick={openBulkEditModal}>Edit</Button>
+        <Button size="sm" variant="danger" onClick={() => setIsBulkDeleteOpen(true)}>Delete</Button>
       </BulkActionToolbar>
 
       <Modal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} title="Add Assessment Category">
@@ -503,6 +617,37 @@ export default function AssessmentManagement() {
           </div>
         </form>
       </Modal>
+
+      {/* Bulk edit modal */}
+      <Modal isOpen={isBulkEditModalOpen} onClose={() => setIsBulkEditModalOpen(false)} title={`Edit ${selectedCount} Assessment${selectedCount === 1 ? '' : 's'}`}>
+        <form onSubmit={handleBulkEditSubmit} className="space-y-4">
+          <p className="text-sm text-gray-600">Leave a field blank to keep its current value.</p>
+          <Input label="Maximum Marks" type="number" name="bulkMaximumMarks" value={bulkEditForm.maximumMarks}
+            onChange={(e) => setBulkEditForm({ ...bulkEditForm, maximumMarks: e.target.value })} />
+          <Input label="Assessment Date" type="date" name="bulkDefaultDate" value={bulkEditForm.defaultDate}
+            onChange={(e) => setBulkEditForm({ ...bulkEditForm, defaultDate: e.target.value, clearDefaultDate: false })}
+            disabled={bulkEditForm.clearDefaultDate} />
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="checkbox" checked={bulkEditForm.clearDefaultDate}
+              onChange={(e) => setBulkEditForm({ ...bulkEditForm, clearDefaultDate: e.target.checked, defaultDate: e.target.checked ? '' : bulkEditForm.defaultDate })}
+              className="w-4 h-4 text-blue-600" />
+            Clear assessment date
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsBulkEditModalOpen(false)}>Cancel</Button>
+            <Button type="submit">Update</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteOpen}
+        onClose={() => setIsBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected Assessments"
+        message={`Delete ${selectedCount} assessment(s)? Existing marks entries for these assessments will also be deleted.`}
+        confirmLabel="Delete"
+      />
 
       {/* Bulk creation wizard modal */}
       <Modal
