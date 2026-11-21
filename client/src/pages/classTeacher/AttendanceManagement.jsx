@@ -46,9 +46,12 @@ export default function AttendanceManagement() {
           academicAPI.getSemesters(first.academicSessionId),
           academicAPI.getSections(first.schoolClassId),
         ]);
-        setSemesters(sems);
+        const semesterList = sems || [];
+        const defaultSemesterId = first.semesterId || semesterList[0]?.id || '';
+        setSemesters(semesterList);
         setSections(secs);
-        loadStudents(first);
+        setFilter((f) => ({ ...f, semesterId: defaultSemesterId }));
+        if (defaultSemesterId) loadStudents(first, defaultSemesterId);
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
@@ -57,11 +60,12 @@ export default function AttendanceManagement() {
 
   const cleanParams = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== ''));
 
-  const loadStudents = async (assignment) => {
+  const loadStudents = async (assignment, semesterId = filter.semesterId) => {
+    const effectiveSemesterId = assignment?.semesterId || semesterId;
     const params = assignment
       ? {
           academicSessionId: assignment.academicSessionId,
-          semesterId: assignment.semesterId,
+          semesterId: effectiveSemesterId,
           schoolClassId: assignment.schoolClassId,
           sectionId: assignment.sectionId,
         }
@@ -188,7 +192,7 @@ export default function AttendanceManagement() {
               <Select placeholder="Class" value={filter.schoolClassId} onChange={(e) => handleFilterChange('schoolClassId', e.target.value)} options={[...new Map(myAssignments.map((a) => [a.schoolClassId, a.schoolClass])).values()].map((c) => ({ value: c.id, label: c.name }))} />
               <Select placeholder="Section" value={filter.sectionId} onChange={(e) => handleFilterChange('sectionId', e.target.value)} options={sections.map((s) => ({ value: s.id, label: s.name }))} />
             </div>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <Button onClick={() => {
                 const assignment = myAssignments.find((a) =>
                   a.academicSessionId === filter.academicSessionId &&
@@ -230,7 +234,7 @@ export default function AttendanceManagement() {
                       </Button>
                     </div>
                     <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
-                    <div className="mt-4 flex justify-between items-center">
+                    <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
                       <div className="text-sm text-gray-600">{students.length} students</div>
                       <Button onClick={handleSubmit} disabled={saving}>{saving ? 'Saving...' : 'Save Attendance'}</Button>
                     </div>

@@ -6,6 +6,7 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
+import Modal from '../../components/Modal';
 
 export default function PDFGeneration() {
   const [students, setStudents] = useState([]);
@@ -18,6 +19,9 @@ export default function PDFGeneration() {
   const [classes, setClasses] = useState([]);
   const [sections, setSections] = useState([]);
   const [filter, setFilter] = useState({ academicSessionId: '', semesterId: '', schoolClassId: '', sectionId: '' });
+  const [previewStudent, setPreviewStudent] = useState(null);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewLoadingId, setPreviewLoadingId] = useState(null);
 
   useEffect(() => { loadInitialData(); }, []);
 
@@ -54,6 +58,28 @@ export default function PDFGeneration() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const openPreview = async (student) => {
+    try {
+      setPreviewLoadingId(student.id);
+      setPreviewStudent(student);
+      setPreviewHtml('');
+      const html = await pdfAPI.getStudentMarksheetPreview({ ...cleanParams(filter), studentId: student.id });
+      setPreviewHtml(html);
+    } catch (error) {
+      console.error('Error generating preview:', error);
+      alert('Error generating preview');
+      setPreviewStudent(null);
+      setPreviewHtml('');
+    } finally {
+      setPreviewLoadingId(null);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewStudent(null);
+    setPreviewHtml('');
   };
 
   const downloadIndividualPDF = async (student) => {
@@ -116,9 +142,14 @@ export default function PDFGeneration() {
       key: 'actions',
       label: 'Actions',
       render: (val, row) => (
-        <Button onClick={() => downloadIndividualPDF(row)} disabled={generatingId === row.id} size="sm">
-          {generatingId === row.id ? '...' : 'Download PDF'}
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" onClick={() => openPreview(row)} disabled={previewLoadingId === row.id}>
+            Preview
+          </Button>
+          <Button onClick={() => downloadIndividualPDF(row)} disabled={generatingId === row.id} size="sm">
+            {generatingId === row.id ? '...' : 'Download PDF'}
+          </Button>
+        </div>
       ),
     },
   ];
@@ -133,7 +164,7 @@ export default function PDFGeneration() {
           <Select placeholder="Select Class" value={filter.schoolClassId} onChange={(e) => handleClassChange(e.target.value)} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
           <Select placeholder="Select Section" value={filter.sectionId} onChange={(e) => setFilter({ ...filter, sectionId: e.target.value })} options={sections.map((s) => ({ value: s.id, label: s.name }))} />
         </div>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={loadStudents} disabled={loading}>{loading ? 'Loading...' : 'Load Students'}</Button>
           {students.length > 0 && (
             <Button onClick={downloadBulkPDF} disabled={generatingBulk} variant="success">
@@ -156,6 +187,29 @@ export default function PDFGeneration() {
           </div>
         </Card>
       )}
+
+      <Modal isOpen={!!previewStudent} onClose={closePreview} title={`Preview — ${previewStudent?.fullName || ''}`}>
+        {previewLoadingId ? (
+          <div className="text-center py-8">Loading preview...</div>
+        ) : previewHtml ? (
+          <iframe title="Marksheet preview" srcDoc={previewHtml} className="w-full h-[70vh] border border-gray-200 rounded-md bg-white" />
+        ) : (
+          <p className="text-sm text-gray-600">Preview is not available.</p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="secondary" onClick={closePreview}>Close</Button>
+          <Button
+            onClick={() => {
+              const student = previewStudent;
+              closePreview();
+              if (student) downloadIndividualPDF(student);
+            }}
+            disabled={!previewHtml}
+          >
+            Download PDF
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }

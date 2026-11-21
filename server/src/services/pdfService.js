@@ -2,8 +2,6 @@ const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
 const { ZipArchive } = require('archiver');
-const prisma = require('../config/database');
-const resultCalculationService = require('./resultCalculationService');
 
 /**
  * Generate PDF from HTML template
@@ -44,6 +42,8 @@ const generatePDF = async (html, outputPath) => {
   }
 };
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 const formatReportDate = (dateFormat) => {
   const d = new Date();
   const dd = String(d.getDate()).padStart(2, '0');
@@ -53,6 +53,7 @@ const formatReportDate = (dateFormat) => {
     case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
     case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
     case 'DD-MM-YYYY': return `${dd}-${mm}-${yyyy}`;
+    case 'DD MMM YYYY': return `${dd} ${MONTHS[d.getMonth()]} ${String(yyyy).slice(-2)}`;
     case 'DD/MM/YYYY':
     default: return `${dd}/${mm}/${yyyy}`;
   }
@@ -71,9 +72,18 @@ const formatAssessmentDate = (date, dateFormat) => {
     case 'MM/DD/YYYY': return `${mm}/${dd}/${yyyy}`;
     case 'YYYY-MM-DD': return `${yyyy}-${mm}-${dd}`;
     case 'DD-MM-YYYY': return `${dd}-${mm}-${yyyy}`;
+    case 'DD MMM YYYY': return `${dd} ${MONTHS[d.getUTCMonth()]} ${String(yyyy).slice(-2)}`;
     case 'DD/MM/YYYY':
     default: return `${dd}/${mm}/${yyyy}`;
   }
+};
+
+// 7.00 -> 7, 9.50 -> 9.5, 19.25 -> 19.25
+const formatMark = (value, precision = 2) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const fixed = n.toFixed(precision);
+  return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed;
 };
 
 /**
@@ -85,6 +95,7 @@ const generateMarksheetHTML = async (data) => {
     enrollment,
     attendance,
     schoolSettings,
+    semester,
     snapshots,
   } = data;
 
@@ -99,6 +110,10 @@ const generateMarksheetHTML = async (data) => {
 
   const attendanceText = attendance
     ? `${attendance.daysAttended}/${attendance.totalWorkingDays}`
+    : 'N/A';
+
+  const workingDaysText = attendance?.totalWorkingDays != null
+    ? String(attendance.totalWorkingDays)
     : 'N/A';
 
   const safeParse = (str) => {
@@ -151,6 +166,7 @@ const generateMarksheetHTML = async (data) => {
     categoryList.forEach((cat) => {
       cat.assessments.forEach((assessmentName) => {
         let markDisplay = 'N/A';
+        let markClass = '';
         let assessmentDate = '';
         const categoryResults = jsonData.categoryResults || {};
         // Match by category code key first, then by category name fallback
@@ -163,16 +179,18 @@ const generateMarksheetHTML = async (data) => {
             assessmentDate = formatAssessmentDate(assessment.date, schoolSettings?.dateFormat);
             if (assessment.status === 'ABSENT') {
               markDisplay = 'A';
+              markClass = 'mark-absent';
             } else if (assessment.status === 'EXEMPTED') {
               markDisplay = 'E';
+              markClass = 'mark-exempt';
             } else if (assessment.status === 'NOT_APPLICABLE') {
               markDisplay = 'N/A';
             } else if (assessment.marksObtained !== null && assessment.marksObtained !== undefined) {
-              markDisplay = Number(assessment.marksObtained).toFixed(schoolSettings?.decimalPrecision || 2);
+              markDisplay = formatMark(assessment.marksObtained, schoolSettings?.decimalPrecision ?? 2);
             }
           }
         }
-        marksCells += `<td>${markDisplay}${assessmentDate ? `<span class="date-row">${assessmentDate}</span>` : ''}</td>`;
+        marksCells += `<td><span class="mark-value ${markClass}">${markDisplay}</span>${assessmentDate ? `<span class="date-row">${assessmentDate}</span>` : ''}</td>`;
       });
     });
 
@@ -196,44 +214,10 @@ const generateMarksheetHTML = async (data) => {
     `;
   }).join('');
 
-  // Overall summary across subjects
-  const summary = resultCalculationService.computeOverallSummary(snapshots);
+  const summaryHtml = '';
 
-  // Resolve overall grade from the active grading policy
-  let overallGrade = '';
-  if (summary.averagePercentage !== null) {
-    const policy = await prisma.gradingPolicy.findFirst({
-      where: { isActive: true },
-      include: { gradeScales: { orderBy: { minPercentage: 'desc' } } },
-    });
-    if (policy) {
-      const scale = policy.gradeScales.find(
-        (gs) => summary.averagePercentage >= parseFloat(gs.minPercentage) &&
-               summary.averagePercentage <= parseFloat(gs.maxPercentage)
-      );
-      if (scale) overallGrade = scale.grade;
-    }
-  }
-
-  const summaryHtml = summary.averagePercentage !== null ? `
-    <tr class="summary-row">
-      <td class="subject-name"><strong>Overall</strong></td>
-      <td class="result-cell" colspan="${Math.max(totalAssessmentCols, 1)}"></td>
-      <!-- Score % / Grade / GPA columns hidden from PDF
-      <td class="result-cell"><strong>${summary.averagePercentage.toFixed(schoolSettings?.decimalPrecision || 2)}%</strong></td>
-      <td class="result-cell"><strong>${overallGrade || '-'}</strong></td>
-      <td class="result-cell"><strong>${summary.gpa !== null ? summary.gpa.toFixed(2) : '-'}</strong></td>
-      -->
-    </tr>
-    <tr class="status-row">
-      <td colspan="${totalAssessmentCols + 1}" class="status-cell">
-        Result: <strong>${summary.resultStatus}</strong>
-        <!-- GPA hidden from PDF
-        ${summary.gpa !== null ? ` &nbsp;|&nbsp; GPA: <strong>${summary.gpa.toFixed(2)}</strong>` : ''}
-        -->
-      </td>
-    </tr>
-  ` : '';
+  const logoPath = path.join(__dirname, '../templates/marksheet/logo.jpg');
+  const logoDataUri = `data:image/jpeg;base64,${(await fs.readFile(logoPath)).toString('base64')}`;
 
   let html = await fs.readFile(
     path.join(__dirname, '../templates/marksheet/template.html'),
@@ -241,15 +225,17 @@ const generateMarksheetHTML = async (data) => {
   );
 
   // Replace placeholders
+  html = html.replaceAll('{{LOGO_SRC}}', logoDataUri);
   html = html.replace('{{SCHOOL_NAME}}', schoolSettings?.schoolName || 'The New School Dhaka');
   html = html.replace('{{SESSION_LABEL}}', schoolSettings?.sessionLabel || 'Academic Session');
   html = html.replace('{{ACADEMIC_SESSION}}', enrollment?.academicSession?.name || '');
   html = html.replace('{{SEMESTER_LABEL}}', schoolSettings?.semesterLabel || 'Semester');
-  html = html.replace('{{SEMESTER}}', enrollment?.semester?.name || '');
+  html = html.replace('{{SEMESTER}}', semester?.name || enrollment?.semester?.name || '');
   html = html.replace('{{STUDENT_NAME}}', student?.fullName || '');
   html = html.replace('{{CLASS}}', enrollment?.schoolClass?.name || '');
   html = html.replace('{{SECTION}}', enrollment?.section?.name || '');
   html = html.replace('{{ROLL_NUMBER}}', enrollment?.rollNumber || '');
+  html = html.replace('{{WORKING_DAYS}}', workingDaysText);
   html = html.replace('{{ATTENDANCE}}', attendanceText);
   html = html.replace('{{ATTENDANCE_PERCENTAGE}}', attendancePercentage);
   html = html.replace('{{REPORT_DATE}}', formatReportDate(schoolSettings?.dateFormat));

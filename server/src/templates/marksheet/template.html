@@ -1,407 +1,954 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The New School Dhaka - Marksheet</title>
+<title>The New School Dhaka | Academic Report</title>
 
 <style>
-@page { size: A4 portrait; margin: 7mm; }
+@page {
+    size: A4 portrait;
+    margin: 9mm;
+}
 
 :root {
-  --ink: #0d2f3b;
-  --deep: #0b4a5e;
-  --brand: #1A9ABA;
-  --mist: #e6f3f6;
-  --gold: #c9a24b;
-  --gold-soft: #f6edd6;
-  --line: #d3e3e8;
-  --muted: #6b7f89;
+    --navy: #123746;
+    --teal: #1A9ABA;
+    --light: #EDF6F8;
+    --border: #D9E5E9;
+    --text: #243B46;
+    --muted: #73858D;
+    --white: #FFFFFF;
 }
 
 * {
-  margin: 0; padding: 0; box-sizing: border-box;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
 }
 
-html, body {
-  width: 100%;
-  font-family: Arial, Helvetica, sans-serif;
-  color: var(--ink);
-  background: #fff;
-  font-size: 9px;
-  line-height: 1.3;
+body {
+    font-family: Times New Roman, Times, serif;
+    background: #eef2f4;
+    color: var(--text);
+    font-size: 9px;
+    line-height: 1.4;
 }
 
-/* Page frame: double border like a certificate */
 .page {
-  position: relative;
-  width: 100%;
-  border: 1.5px solid var(--deep);
-  padding: 3px;
-  overflow: hidden;
-}
-.page-inner {
-  position: relative;
-  border: 0.5px solid var(--gold);
-  min-height: 275mm;
-  padding-bottom: 12px;
+    width: 100%;
+    max-width: 210mm;
+    min-height: 279mm;
+    margin: 0 auto;
+    background: white;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #e3e9ec;
 }
 
-/* Faint watermark */
-.watermark {
-  position: absolute;
-  left: 50%; top: 52%;
-  width: 300px; height: 300px;
-  transform: translate(-50%, -50%);
-  object-fit: contain;
-  opacity: .045;
-  z-index: 0;
+.page-inner {
+    min-height: 279mm;
+    display: flex;
+    flex-direction: column;
+    position: relative;
 }
-.content { position: relative; z-index: 1; }
 
 /* HEADER */
+
 .header {
-  position: relative;
-  text-align: center;
-  color: #fff;
-  padding: 20px 20px 34px;
-  background:
-    radial-gradient(circle at 8% 15%, rgba(255,255,255,.14) 0, rgba(255,255,255,.14) 38px, transparent 39px),
-    radial-gradient(circle at 92% 85%, rgba(201,162,75,.35) 0, rgba(201,162,75,.35) 60px, transparent 61px),
-    radial-gradient(circle at 80% 10%, rgba(255,255,255,.10) 0, rgba(255,255,255,.10) 26px, transparent 27px),
-    linear-gradient(135deg, var(--deep) 0%, #0f7d9a 60%, var(--brand) 100%);
+    padding: 22px 25px 19px;
+    background: var(--navy);
+    color: white;
+    position: relative;
 }
-.header::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--gold), #e8cf8f, var(--gold));
+
+.header-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
 .logo {
-  width: 62px; height: 62px;
-  object-fit: contain;
-  display: block;
-  margin: 0 auto 7px;
-  background: #fff;
-  border-radius: 50%;
-  padding: 6px;
-  border: 2px solid var(--gold);
+    width: 65px;
+    height: 65px;
+    object-fit: contain;
+    background: white;
+    padding: 5px;
+    border-radius: 5px;
+}
+
+.school-info {
+    flex: 1;
 }
 
 .school-name {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-}
-.school-subtitle {
-  font-family: Georgia, serif;
-  font-style: italic;
-  font-size: 10px;
-  color: #cfe9f0;
-  margin-top: 3px;
-  letter-spacing: 1px;
+    font-family: Times New Roman, Times, serif;
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: .3px;
+    line-height: 1.3;
 }
 
-/* Exam title overlaps the header edge */
-.exam-wrap { text-align: center; margin-top: -13px; position: relative; z-index: 2; }
-.exam-title {
-  display: inline-block;
-  background: #fff;
-  color: var(--deep);
-  border: 1.5px solid var(--gold);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .6px;
-  padding: 6px 24px;
-  border-radius: 20px;
+.school-tagline {
+    font-size: 9px;
+    color: #b9dce5;
+    letter-spacing: 2px;
+    margin-top: 4px;
 }
 
-.body-pad { padding: 14px 18px 0; }
+.school-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    padding: 3px 9px;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 2px;
+    font-size: 7px;
+    letter-spacing: 1.3px;
+    color: white;
+}
 
-/* SECTION TITLES */
-.section-heading, .table-heading h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: Georgia, serif;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--deep);
-  margin-bottom: 6px;
+.school-label span {
+    display: inline-flex;
+    align-items: center;
 }
-.section-heading::after, .table-heading h3::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, var(--gold), transparent);
-}
-.table-heading { margin-bottom: 0; }
 
-/* STUDENT CARD */
-.student-box {
-  position: relative;
-  border: 1px solid var(--line);
-  border-left: 5px solid var(--gold);
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  background: linear-gradient(135deg, #fff 0%, var(--mist) 100%);
+.school-label svg {
+    width: 8px;
+    height: 8px;
+    fill: currentColor;
 }
+
+.school-label .contact-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.school-label .contact-item svg {
+    width: 7px;
+    height: 7px;
+}
+
+.school-label .contact-separator {
+    opacity: .75;
+}
+
+.header-accent {
+    height: 4px;
+    background: var(--teal);
+}
+
+/* REPORT TITLE */
+
+.report-heading {
+    display: flex;
+    font-size: xx-large;
+    align-items: center;
+    justify-content: center;
+    padding: 18px 25px 12px;
+}
+
+.report-title {
+    font-family: Times New Roman, Times, serif;
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--navy);
+}
+
+.report-subtitle {
+    font-size: 8px;
+    color: var(--muted);
+    margin-top: 3px;
+    letter-spacing: .6px;
+}
+
+.session-box {
+    text-align: right;
+    border-left: 3px solid var(--teal);
+    padding: 5px 0 5px 12px;
+}
+
+.session-label {
+    font-size: 7px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.session-value {
+    font-size: 10px;
+    color: var(--navy);
+    font-weight: bold;
+    margin-top: 3px;
+}
+
+.session-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 20px;
+    color: var(--navy);
+}
+
+.session-line .session-semester,
+.session-line .session-value-inline {
+    font-weight: bold;
+}
+
+.session-line .session-label-inline {
+    color: var(--muted);
+    font-size: 20px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.session-line .session-separator {
+    color: var(--muted);
+}
+
+/* CONTENT */
+
+.content {
+    padding: 8px 25px 0;
+}
+
+/* SECTION TITLE */
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--navy);
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    margin-bottom: 9px;
+}
+
+.section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+/* STUDENT INFORMATION */
+
+.student-card {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.student-card-header {
+    background: var(--light);
+    padding: 7px 12px;
+    color: var(--navy);
+    font-size: 8px;
+    font-weight: bold;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+}
+
 .student-grid {
-  display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
-  gap: 9px 14px;
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr;
+    padding: 12px;
+    gap: 14px 16px;
 }
-.info-item { border-bottom: 1px dashed #b9d3da; padding-bottom: 4px; }
-.info-item label {
-  display: block;
-  color: var(--muted);
-  font-size: 7.5px;
-  font-weight: 700;
-  margin-bottom: 2px;
-  letter-spacing: .5px;
+
+.info-item {
+    min-width: 0;
 }
-.info-item strong { font-size: 11px; color: var(--ink); }
+
+.info-label {
+    display: block;
+    font-size: 7px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 4px;
+}
+
+.info-value {
+    display: block;
+    color: var(--text);
+    font-size: 10px;
+    font-weight: bold;
+    overflow-wrap: anywhere;
+}
 
 /* MARKS TABLE */
+
+.academic-section {
+    margin-top: 2px;
+}
+
+.table-wrapper {
+    width: 100%;
+    overflow: visible;
+}
+
 table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  table-layout: auto;
-  font-size: 8px;
-  border: 1px solid var(--deep);
-  border-radius: 6px;
-  overflow: hidden;
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 12px;
+    border: 1px solid var(--border);
 }
-th, td {
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding: 5px 3px;
-  text-align: center;
-  vertical-align: middle;
-  overflow-wrap: anywhere;
+
+thead {
+    display: table-header-group;
 }
-th:last-child, td:last-child { border-right: none; }
-tbody tr:last-child td { border-bottom: none; }
-thead { display: table-header-group; }
 
 thead tr:first-child th {
-  background: var(--deep);
-  color: #fff;
-  font-size: 8px;
-  font-weight: 700;
-  padding: 7px 2px;
-  border-right: 1px solid rgba(255,255,255,.2);
-  border-bottom: 2px solid var(--gold);
+    background: var(--navy);
+    color: white;
+    padding: 5px 3px;
+    font-size: 10px;
+    font-weight: bold;
+    border: 1px solid #315563;
 }
+
 thead tr:nth-child(2) th {
-  background: var(--gold-soft);
-  color: #7a5c14;
-  font-size: 7px;
-  padding: 4px 2px;
+    background: #E8F3F6;
+    color: var(--navy);
+    padding: 4px 2px;
+    font-size: 9px;
+    font-weight: bold;
+    border: 1px solid var(--border);
+}
+
+th, td {
+    text-align: center;
+    vertical-align: middle;
+    padding: 4px 3px;
+    border: 1px solid var(--border);
+    overflow-wrap: anywhere;
 }
 
 .subject-name {
-  text-align: left;
-  font-weight: 700;
-  color: var(--deep);
-  min-width: 85px;
-  padding-left: 7px;
-  border-left: 3px solid var(--brand);
+    text-align: left;
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--navy);
+    min-width: 85px;
+    padding-left: 8px;
+    border-left: 1px solid var(--teal);
 }
-.date-row { display: block; font-size: 6px; color: var(--muted); font-weight: 400; margin-top: 2px; }
 
-tbody tr:nth-child(even) td { background: #f3f9fb; }
-.result-cell { font-weight: 700; color: var(--deep); }
+.mark-value {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--navy);
+}
+
+.mark-absent {
+    color: #C0392B;
+}
+
+.mark-exempt {
+    color: #B9770E;
+}
+
+.date-row {
+    display: block;
+    font-size: 10px;
+    font-weight: normal;
+    color: var(--teal);
+    margin-top: 3px;
+}
+
+tbody tr:nth-child(even) td {
+    background: var(--light);
+}
+
+tbody tr:nth-child(odd) td {
+    background: #FFFFFF;
+}
+
+.result-cell {
+    font-weight: bold;
+    color: var(--navy);
+}
 
 .summary-row td {
-  background: var(--deep) !important;
-  color: #fff !important;
-  font-weight: 800;
-  padding: 6px 3px;
-  border-color: rgba(255,255,255,.2);
-}
-.status-row td {
-  background: var(--gold-soft) !important;
-  color: #5e4510 !important;
-  text-align: right;
-  font-size: 9px;
-  font-weight: 700;
-  padding: 8px;
+    background: var(--navy) !important;
+    color: white !important;
+    font-weight: bold;
+    border-color: #315563;
+    padding: 9px 3px;
 }
 
-/* RESULT BANNER */
-.result-note {
-  display: flex;
-  align-items: stretch;
-  margin-top: 12px;
-  border: 1.5px solid var(--gold);
-  border-radius: 6px;
-  overflow: hidden;
-  font-family: Georgia, serif;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--deep);
-  background: linear-gradient(90deg, var(--gold-soft), #fff);
-  padding-right: 14px;
+.status-row td {
+    background: #E8F3F6 !important;
+    color: var(--navy) !important;
+    font-size: 9px;
+    font-weight: bold;
+    text-align: right;
+    padding: 9px;
 }
-.result-note strong {
-  display: flex;
-  align-items: center;
-  background: var(--deep);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  padding: 10px 16px;
-  margin-right: 14px;
+
+/* RESULT */
+
+.result-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 17px;
+    padding: 13px 15px;
+    background: var(--light);
+    border: 1px solid #C9E3EA;
+    border-left: 4px solid var(--teal);
+    border-radius: 3px;
 }
-.result-note { align-items: center; }
-.result-note strong { align-self: stretch; }
+
+.result-label {
+    font-size: 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+}
+
+.result-value {
+    font-family: Times New Roman, Times, serif;
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--navy);
+}
 
 /* SIGNATURES */
+
 .signatures {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 42px;
-  padding: 0 26px;
+    display: flex;
+    justify-content: space-between;
+    margin-top: 55px;
+    padding: 0 12px;
+    gap: 40px;
 }
-.signature { width: 150px; text-align: center; }
+
+.signature {
+    width: 155px;
+    text-align: center;
+}
+
 .signature-line {
-  border-top: 1px solid var(--deep);
-  padding-top: 5px;
-  color: var(--deep);
-  font-weight: 700;
-  font-size: 9px;
+    border-top: 1px solid #82969E;
+    padding-top: 7px;
+    font-size: 9px;
+    font-weight: bold;
+    color: var(--navy);
 }
 
 /* FOOTER */
-.footer-note {
-  text-align: center;
-  margin: 16px 18px 0;
-  border-top: 1px solid var(--line);
-  padding-top: 6px;
-  font-size: 7px;
-  color: var(--muted);
+
+.footer {
+    margin-top: auto;
+    padding: 12px 25px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 7px;
 }
 
+.footer-brand {
+    color: var(--teal);
+    font-weight: bold;
+    letter-spacing: .5px;
+}
+
+/* WATERMARK */
+
+.watermark {
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    object-fit: contain;
+    left: 50%;
+    top: 55%;
+    transform: translate(-50%, -50%);
+    opacity: .035;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.content,
+.report-heading,
+.footer {
+    position: relative;
+    z-index: 1;
+}
+
+/* ON-SCREEN MOBILE PREVIEW (does not affect PDF/print output) */
+
+@media screen and (max-width: 640px) {
+    body {
+        font-size: 12px;
+    }
+
+    .page {
+        max-width: 100%;
+        min-height: 0;
+        border: none;
+    }
+
+    .page-inner {
+        min-height: 0;
+    }
+
+    .header {
+        padding: 10px 10px 10px;
+    }
+
+    .header-top {
+        gap: 6px;
+    }
+
+    .logo {
+        width: 46px;
+        height: 46px;
+    }
+
+    .school-name {
+        font-size: 16px;
+    }
+
+    .school-tagline {
+        font-size: 7px;
+        letter-spacing: 1px;
+    }
+
+    .school-label {
+        flex-wrap: wrap;
+        font-size: 7px;
+        gap: 4px;
+    }
+
+    .report-heading {
+        padding: 8px 10px 8px;
+    }
+
+    .report-title {
+        font-size: 20px;
+    }
+
+    .session-line {
+        flex-wrap: wrap;
+        font-size: 20px;
+    }
+
+    .content {
+        padding: 8px 12px 0;
+    }
+
+    .section-title {
+        font-size: 20px;
+        margin-bottom: 8px;
+    }
+
+    .student-card-header {
+        padding: 6px 10px;
+        font-size: 7px;
+    }
+
+    .student-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 10px;
+        padding: 8px;
+    }
+
+    .info-label {
+        font-size: 6px;
+    }
+
+    .info-value {
+        font-size: 12px;
+    }
+
+    .table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    table {
+        min-width: 600px;
+        font-size: 12px;
+    }
+
+    .subject-name {
+        min-width: 90px;
+    }
+
+    .signatures {
+        flex-wrap: wrap;
+        gap: 14px 20px;
+        margin-top: 28px;
+        padding: 0;
+    }
+
+    .signature {
+        width: 45%;
+    }
+
+    .result-panel {
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+        padding: 10px 12px;
+    }
+
+    .result-value {
+        font-size: 14px;
+    }
+
+    .footer {
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 20px;
+        padding: 10px 12px;
+        font-size: 6px;
+    }
+}
+
+/* COMPACT MODE — auto-applied by script when content exceeds one page */
+
+.marksheet-compact .header {
+    padding: 12px 18px 10px;
+}
+
+.marksheet-compact .school-name {
+    font-size: 16px;
+}
+
+.marksheet-compact .school-tagline {
+    font-size: 7px;
+}
+
+.marksheet-compact .report-heading {
+    padding: 8px 18px 6px;
+}
+
+.marksheet-compact .session-line {
+    font-size: 15px;
+}
+
+.marksheet-compact .content {
+    padding: 5px 18px 0;
+}
+
+.marksheet-compact .section-title {
+    font-size: 8px;
+    margin-bottom: 6px;
+}
+
+.marksheet-compact .student-card {
+    margin-bottom: 10px;
+}
+
+.marksheet-compact .student-card-header {
+    padding: 5px 10px;
+}
+
+.marksheet-compact .student-grid {
+    gap: 8px 12px;
+    padding: 8px;
+}
+
+.marksheet-compact .info-label {
+    font-size: 6px;
+    margin-bottom: 2px;
+}
+
+.marksheet-compact .info-value {
+    font-size: 8px;
+}
+
+.marksheet-compact table {
+    font-size: 7px;
+}
+
+.marksheet-compact th,
+.marksheet-compact td {
+    padding: 3px 2px;
+}
+
+.marksheet-compact thead tr:first-child th {
+    padding: 4px 2px;
+    font-size: 9px;
+}
+
+.marksheet-compact thead tr:nth-child(2) th {
+    padding: 3px 2px;
+    font-size: 8px;
+}
+
+.marksheet-compact .subject-name {
+    font-size: 9px;
+    min-width: 70px;
+}
+
+.marksheet-compact .mark-value {
+    font-size: 9px;
+}
+
+.marksheet-compact .date-row {
+    font-size: 8px;
+    margin-top: 2px;
+}
+
+.marksheet-compact .signatures {
+    margin-top: 22px;
+    gap: 20px;
+}
+
+.marksheet-compact .result-panel {
+    margin-top: 10px;
+    padding: 9px 12px;
+}
+
+.marksheet-compact .result-value {
+    font-size: 13px;
+}
+
+.marksheet-compact .footer {
+    margin-top: 10px;
+    padding: 8px 18px;
+}
+
+/* PRINT */
+
 @media print {
-  html, body { margin: 0; padding: 0; }
-  .header, .student-box, .table-heading, .result-note, .signatures {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-  tr { break-inside: avoid; page-break-inside: avoid; }
+    html, body {
+        background: white;
+        margin: 0;
+        padding: 0;
+    }
+
+    .page {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        border: none;
+        min-height: 279mm;
+    }
+
+    .page-inner {
+        min-height: 279mm;
+    }
+
+    .student-card,
+    .result-panel,
+    .signatures,
+    tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
 }
 </style>
 </head>
 
 <body>
+
 <div class="page">
 <div class="page-inner">
 
-  <img src="{{SCHOOL_LOGO_URL}}" class="watermark" alt="">
-
-  <div class="content">
+    <img src="{{LOGO_SRC}}" class="watermark" alt="">
 
     <!-- SCHOOL HEADER -->
+
     <header class="header">
-      <img src="{{SCHOOL_LOGO_URL}}" class="logo" alt="School Logo">
-      <div class="school-name">The New School Dhaka</div>
-      <div class="school-subtitle">Learning . Living . Leading</div>
+        <div class="header-top">
+
+            <img src="{{LOGO_SRC}}" class="logo" alt="School Logo">
+
+            <div class="school-info">
+                <div class="school-name">
+                    The New School Dhaka
+                </div>
+
+                <div class="school-tagline">
+                    LEARNING . LIVING . LEADING
+                </div>
+
+                <div class="school-label">
+                    <span class="contact-item"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg></span>House: 41, Road: 1/A, Block: I, Banani, Dhaka-1213</span>
+                    <span class="contact-separator">|</span>
+                    <span class="contact-item"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></span> +880 1329692494</span>
+                    <span class="contact-separator">|</span>
+                    <span class="contact-item"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg></span> info@nsdschool.com</span>
+                </div>
+            </div>
+
+        </div>
     </header>
 
-    <div class="exam-wrap">
-      <div class="exam-title">
-        {{SEMESTER}} &nbsp; | &nbsp; Session: {{ACADEMIC_SESSION}}
-      </div>
-    </div>
+    <div class="header-accent"></div>
 
-    <div class="body-pad">
+    <!-- REPORT TITLE -->
 
-      <!-- STUDENT DETAILS -->
-      <div class="section-heading">Student Information</div>
+    <section class="report-heading">
 
-      <section class="student-box">
-        <div class="student-grid">
-          <div class="info-item">
-            <label>Student Name</label>
-            <strong>{{STUDENT_NAME}}</strong>
-          </div>
-          <div class="info-item">
-            <label>Student ID</label>
-            <strong>{{STUDENT_ID}}</strong>
-          </div>
-          <div class="info-item">
-            <label>Class / Section</label>
-            <strong>{{CLASS}} / {{SECTION}}</strong>
-          </div>
-          <div class="info-item">
-            <label>Roll Number</label>
-            <strong>{{ROLL_NUMBER}}</strong>
-          </div>
-          <div class="info-item">
-            <label>Attendance</label>
-            <strong>{{ATTENDANCE}}</strong>
-          </div>
-          <div class="info-item">
-            <label>Publish Date</label>
-            <strong>{{REPORT_DATE}}</strong>
-          </div>
+        <div class="session-line">
+            <span class="session-semester">{{SEMESTER}}</span>
+            <span class="session-separator">|</span>
+            <span class="session-label-inline">Session:</span>
+            <span class="session-value-inline">{{ACADEMIC_SESSION}}</span>
         </div>
-      </section>
 
-      <!-- MARKSHEET -->
-      <div class="table-heading">
-        <h3>Academic Performance</h3>
-      </div>
+    </section>
 
-      <table>
-        <thead>
-          <tr>
-            <th rowspan="2" style="width:95px">Subject</th>
-            {{CATEGORY_HEADERS}}
-          </tr>
-          <tr>
-            {{ASSESSMENT_HEADERS}}
-          </tr>
-        </thead>
-        <tbody>
-          {{SUBJECT_ROWS}}
-          {{SUMMARY_ROWS}}
-        </tbody>
-      </table>
+    <main class="content">
 
-      <!-- RESULT -->
-      <div class="result-note">
-        <strong>Result</strong> {{RESULT_STATUS}}
-      </div>
+        <!-- STUDENT INFORMATION -->
 
-      <!-- SIGNATURES -->
-      <div class="signatures">
-        <div class="signature">
-          <div class="signature-line">{{CLASS_TEACHER_SIGNATURE}}</div>
+        <section class="student-card">
+
+            <div class="student-card-header">
+               Student Information
+            </div>
+
+            <div class="student-grid">
+
+                <div class="info-item">
+                    <span class="info-label">Student Name</span>
+                    <span class="info-value">{{STUDENT_NAME}}</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Student ID</span>
+                    <span class="info-value">{{STUDENT_ID}}</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Class / Section</span>
+                    <span class="info-value">{{CLASS}} / {{SECTION}}</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Working Days</span>
+                    <span class="info-value">{{WORKING_DAYS}}</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Attendance</span>
+                    <span class="info-value">{{ATTENDANCE}}</span>
+                </div>
+
+                <div class="info-item">
+                    <span class="info-label">Report Date</span>
+                    <span class="info-value">{{REPORT_DATE}}</span>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- ACADEMIC PERFORMANCE -->
+
+        <section class="academic-section">
+
+            <div class="section-title">
+                Academic Performance
+            </div>
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="width:95px">
+                                Subject
+                            </th>
+
+                            {{CATEGORY_HEADERS}}
+                        </tr>
+
+                        <tr>
+                            {{ASSESSMENT_HEADERS}}
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {{SUBJECT_ROWS}}
+                        {{SUMMARY_ROWS}}
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+        <!-- SIGNATURES -->
+
+        <section class="signatures">
+
+            <div class="signature">
+                <div class="signature-line">
+                    {{CLASS_TEACHER_SIGNATURE}}
+                </div>
+            </div>
+
+            <div class="signature">
+                <div class="signature-line">
+                    {{PRINCIPAL_SIGNATURE}}
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+
+    <footer class="footer">
+
+        <div>
+            This is a computer-generated academic report.
         </div>
-        <div class="signature">
-          <div class="signature-line">{{PRINCIPAL_SIGNATURE}}</div>
+
+        <div class="footer-brand">
+            THE NEW SCHOOL DHAKA
         </div>
-      </div>
 
-    </div>
+    </footer>
 
-    <div class="footer-note">
-      This is a computer-generated academic report of The New School Dhaka.
-    </div>
-
-  </div>
 </div>
 </div>
+
+<script>
+(function () {
+    var inner = document.querySelector('.page-inner');
+    if (!inner) return;
+
+    function applyFit() {
+        var minH = parseFloat(getComputedStyle(inner).minHeight) || 0;
+        // Skip when min-height is disabled (e.g. mobile screen preview)
+        if (minH < 100) {
+            document.body.classList.remove('marksheet-compact');
+            return;
+        }
+        var overflows = inner.scrollHeight > minH + 4;
+        document.body.classList.toggle('marksheet-compact', overflows);
+    }
+
+    applyFit();
+    window.addEventListener('load', applyFit);
+    window.addEventListener('resize', applyFit);
+})();
+</script>
+
 </body>
 </html>

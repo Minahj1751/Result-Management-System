@@ -12,6 +12,17 @@ const downloadBlob = (blob, filename) => {
 };
 
 export const pdfAPI = {
+  getStudentMarksheetPreview: async (params) => {
+    const response = await api.get('/pdf/student/preview', {
+      params,
+      responseType: 'text',
+    });
+    return response.data;
+  },
+  getStudentMissingMarks: async (params) => {
+    const response = await api.get('/pdf/student/missing-marks', { params });
+    return response.data;
+  },
   downloadStudentMarksheet: async (params, filename) => {
     const response = await api.get('/pdf/student', {
       params,

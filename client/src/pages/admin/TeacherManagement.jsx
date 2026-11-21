@@ -614,8 +614,8 @@ export default function TeacherManagement() {
           <>
             <div className="max-h-96 overflow-y-auto pr-2 space-y-2">
               {classSubjectList.map((subject) => (
-                <div key={subject.id} className="flex items-center gap-3">
-                  <span className="w-56 shrink-0 text-sm text-gray-700">{subject.name}</span>
+                <div key={subject.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <span className="w-full text-sm text-gray-700 sm:w-56 sm:shrink-0">{subject.name}</span>
                   <div className="flex-1">
                     <Select
                       value={subjectTeachers[subject.id] || ''}
@@ -731,7 +731,7 @@ export default function TeacherManagement() {
           )}
           {importPreview && (
             <div className="space-y-3 border-t pt-3">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-blue-50 p-3 rounded"><p className="text-xs text-gray-600">Total Rows</p><p className="text-xl font-bold text-blue-600">{importPreview.validation.totalRows}</p></div>
                 <div className="bg-green-50 p-3 rounded"><p className="text-xs text-gray-600">Valid Rows</p><p className="text-xl font-bold text-green-600">{importPreview.validation.validRows.length}</p></div>
                 <div className="bg-red-50 p-3 rounded"><p className="text-xs text-gray-600">Invalid Rows</p><p className="text-xl font-bold text-red-600">{importPreview.validation.invalidRows.length}</p></div>
@@ -773,8 +773,8 @@ export default function TeacherManagement() {
                 <p className="text-sm text-gray-500">No classes/sections found. Create classes and sections first.</p>
               )}
               {classSectionPairs.map((p) => (
-                <div key={p.key} className="flex items-center gap-3">
-                  <span className="w-32 shrink-0 text-sm text-gray-700">{p.label}</span>
+                <div key={p.key} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <span className="w-full text-sm text-gray-700 sm:w-32 sm:shrink-0">{p.label}</span>
                   <Select
                     value={bulkClassForm.selections[p.key] || currentClassTeacherByPair[p.key] || ''}
                     onChange={(e) => setBulkClassForm({ ...bulkClassForm, selections: { ...bulkClassForm.selections, [p.key]: e.target.value } })}

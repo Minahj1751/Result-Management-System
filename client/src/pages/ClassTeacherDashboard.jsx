@@ -96,12 +96,20 @@ export default function ClassTeacherDashboard() {
             </ul>
           </Card>
 
-          <Link
-            to="/class-teacher/attendance"
-            className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
-          >
-            Go to Attendance
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              to="/class-teacher/attendance"
+              className="inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm"
+            >
+              Go to Attendance
+            </Link>
+            <Link
+              to="/class-teacher/marksheet-preview"
+              className="inline-block bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700 text-sm"
+            >
+              Preview Marksheet
+            </Link>
+          </div>
         </>
       )}
     </div>

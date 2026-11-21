@@ -295,6 +295,12 @@ h3 {
   color: #fff;
 }
 
+.sidebar-link-logout:hover {
+  border-color: rgba(252, 165, 165, 0.35);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 17px 13px 0;
@@ -558,6 +564,7 @@ textarea::placeholder {
   left: 0;
   width: 100%;
   min-width: 240px;
+  max-width: calc(100vw - 48px);
   border: 1px solid #e2e6ef;
   border-radius: 13px;
   background: #fff;
@@ -700,8 +707,9 @@ textarea::placeholder {
   z-index: 20;
   bottom: 14px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 10px 14px;
   margin-top: 14px;
   padding: 10px 16px;
   border: 1px solid #ddd8ff;
@@ -815,9 +823,11 @@ textarea::placeholder {
 }
 
 .ui-summary-value {
+  min-width: 0;
   color: #263047;
   font-weight: 700;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .ui-wizard-nav {
@@ -1210,9 +1220,40 @@ textarea::placeholder {
     padding: 18px;
     border-radius: 16px;
   }
+
+  .ui-table th,
+  .ui-table td {
+    padding: 10px 12px;
+  }
+
+  .ui-pagination {
+    gap: 8px;
+  }
+
+  .ui-steps {
+    gap: 5px;
+  }
+
+  .ui-step {
+    padding: 8px 7px;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 520px) {
+  .topbar {
+    gap: 10px;
+    padding: 8px 12px;
+  }
+
+  .mobile-menu-button {
+    margin-right: 4px;
+  }
+
+  .brand-name {
+    display: none;
+  }
+
   .brand-caption,
   .profile-role,
   .profile-name {
@@ -1228,7 +1269,10 @@ textarea::placeholder {
   }
 
   .topbar-button {
+    min-height: 34px;
     padding: 0 8px;
+    font-size: 10px;
+    white-space: nowrap;
   }
 
   .login-page {

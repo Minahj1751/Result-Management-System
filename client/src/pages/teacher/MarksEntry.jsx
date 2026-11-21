@@ -323,7 +323,7 @@ export default function MarksEntry() {
                     )}
                   </div>
                   <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
-                  <div className="mt-4 flex justify-between items-center">
+                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
                     <div className="text-sm text-gray-600">{students.length} students</div>
                     <Button onClick={handleSubmit} disabled={saving || invalidMarks}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
                   </div>

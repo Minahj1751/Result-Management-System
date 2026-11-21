@@ -33,6 +33,7 @@ const NAV_ITEMS = {
     { path: '/class-teacher/dashboard', label: 'Dashboard', icon: '⌂' },
     { path: '/teacher/marks', label: 'Marks Entry', icon: '✓' },
     { path: '/class-teacher/attendance', label: 'Attendance', icon: '◷' },
+    { path: '/class-teacher/marksheet-preview', label: 'Marksheet Preview', icon: '▧' },
   ],
 };
 
@@ -90,7 +91,7 @@ export default function MainLayout() {
             {isMobileNavOpen ? '×' : '☰'}
           </button>
           <Link className="brand-lockup" to={NAV_ITEMS[user.role]?.[0]?.path || '/login'}>
-            <span className="brand-mark" aria-hidden="true">✦</span>
+            <img src="/Logo.png" alt="The New School Dhaka" className="h-11 w-11 flex-none object-contain" />
             <span>
               <span className="brand-name block">The New School Dhaka</span>
               <span className="brand-caption block">Result Management System</span>
@@ -105,16 +106,6 @@ export default function MainLayout() {
               <span className="profile-role block">{ROLE_LABELS[user.role] || 'School user'}</span>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsPasswordModalOpen(true)}
-            className="topbar-button"
-          >
-            Change password
-          </button>
-          <button type="button" onClick={handleLogout} className="topbar-button topbar-button-logout">
-            Log out
-          </button>
         </div>
       </header>
 
@@ -143,6 +134,27 @@ export default function MainLayout() {
               </NavLink>
             ))}
           </nav>
+          <div className="mt-4 grid gap-1 border-t border-white/10 pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setIsPasswordModalOpen(true);
+                setIsMobileNavOpen(false);
+              }}
+              className="sidebar-link w-full cursor-pointer border-transparent bg-transparent text-left"
+            >
+              <span className="sidebar-icon" aria-hidden="true">⚿</span>
+              <span>Change password</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="sidebar-link sidebar-link-logout w-full cursor-pointer border-transparent bg-transparent text-left"
+            >
+              <span className="sidebar-icon" aria-hidden="true">⎋</span>
+              <span>Log out</span>
+            </button>
+          </div>
           <div className="sidebar-footer">A brighter way to manage every result.</div>
         </aside>
 

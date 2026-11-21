@@ -67,7 +67,7 @@ export default function LoginPage() {
 
       <section className="login-form-side">
         <div className="login-card">
-          <div className="brand-mark mb-5" aria-hidden="true">✦</div>
+          <img src="/Logo.png" alt="The New School Dhaka" className="mb-5 h-16 w-16 object-contain" />
           <h2>Welcome back</h2>
           <p className="login-card-subtitle">Sign in to continue to your school workspace.</p>
 

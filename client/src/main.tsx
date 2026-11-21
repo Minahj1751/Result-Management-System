@@ -18,6 +18,7 @@ import PDFGeneration from './pages/admin/PDFGeneration';
 import ExcelImport from './pages/admin/ExcelImport';
 import MarksEntry from './pages/teacher/MarksEntry';
 import AttendanceManagement from './pages/classTeacher/AttendanceManagement';
+import ClassTeacherMarksheetPreview from './pages/classTeacher/MarksheetPreview';
 import './style.css';
 
 const getStoredUser = () => {
@@ -104,6 +105,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         >
           <Route path="dashboard" element={<ClassTeacherDashboard />} />
           <Route path="attendance" element={<AttendanceManagement />} />
+          <Route path="marksheet-preview" element={<ClassTeacherMarksheetPreview />} />
         </Route>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
