@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { academicAPI } from '../../api/academicService';
 import { assessmentAPI } from '../../api/assessmentService';
+import { exportAPI } from '../../api/exportService';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
@@ -543,8 +544,14 @@ export default function AssessmentManagement() {
           <Select placeholder="Subject" value={filter.subjectId} onChange={(e) => setFilter({ ...filter, subjectId: e.target.value })} options={subjects.map((s) => ({ value: s.id, label: s.name }))} />
           <Select placeholder="Category" value={filter.categoryId} onChange={(e) => setFilter({ ...filter, categoryId: e.target.value })} options={categories.map((c) => ({ value: c.id, label: c.name }))} />
         </div>
-        <div className="mt-4">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => openAssessmentModal()}>+ New Assessment (Bulk)</Button>
+          <Button
+            variant="secondary"
+            onClick={() => exportAPI.assessments(cleanParams(filter)).catch(() => alert('Error exporting assessments'))}
+          >
+            Export to Excel
+          </Button>
         </div>
       </Card>
 

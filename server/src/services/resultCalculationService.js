@@ -1,6 +1,19 @@
 const prisma = require('../config/database');
 
 /**
+ * Per-student subject selection (session-wise). Returns a Set of subjectIds
+ * the student is assigned, or null when the student has no explicit
+ * selection — meaning all class subjects apply.
+ */
+const getStudentSubjectFilter = async (studentId, academicSessionId, schoolClassId, sectionId) => {
+  const rows = await prisma.studentSubject.findMany({
+    where: { studentId, academicSessionId, schoolClassId, sectionId },
+    select: { subjectId: true },
+  });
+  return rows.length > 0 ? new Set(rows.map((r) => r.subjectId)) : null;
+};
+
+/**
  * Calculate result for a student in a subject
  */
 const calculateStudentSubjectResult = async (studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId) => {
@@ -165,6 +178,18 @@ const calculateClassResults = async (academicSessionId, semesterId, schoolClassI
     });
 
     const results = [];
+    const studentIds = enrollments.map((e) => e.studentId);
+
+    // Per-student subject selections for this class/section/session
+    const subjectRows = await prisma.studentSubject.findMany({
+      where: { academicSessionId, schoolClassId, sectionId, studentId: { in: studentIds } },
+      select: { studentId: true, subjectId: true },
+    });
+    const subjectFilterByStudent = new Map();
+    subjectRows.forEach((r) => {
+      if (!subjectFilterByStudent.has(r.studentId)) subjectFilterByStudent.set(r.studentId, new Set());
+      subjectFilterByStudent.get(r.studentId).add(r.subjectId);
+    });
 
     for (const enrollment of enrollments) {
       const studentResults = {
@@ -173,7 +198,11 @@ const calculateClassResults = async (academicSessionId, semesterId, schoolClassI
         subjects: [],
       };
 
+      const subjectFilter = subjectFilterByStudent.get(enrollment.studentId) || null;
+
       for (const subject of subjects) {
+        if (subjectFilter && !subjectFilter.has(subject.id)) continue;
+
         const subjectResult = await calculateStudentSubjectResult(
           enrollment.studentId,
           academicSessionId,
@@ -334,8 +363,14 @@ const getStudentMarksheetSnapshots = async (studentId, academicSessionId, semest
 
   subjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));
 
+  // Restrict to the student's assigned subjects when a selection exists
+  const subjectFilter = await getStudentSubjectFilter(studentId, academicSessionId, schoolClassId, sectionId);
+  const effectiveSubjects = subjectFilter
+    ? subjects.filter((s) => subjectFilter.has(s.id))
+    : subjects;
+
   const snapshots = [];
-  for (const subject of subjects) {
+  for (const subject of effectiveSubjects) {
     const calculation = await calculateStudentSubjectResult(
       studentId, academicSessionId, semesterId, schoolClassId, sectionId, subject.id
     );

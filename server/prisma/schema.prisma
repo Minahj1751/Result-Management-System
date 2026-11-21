@@ -71,6 +71,7 @@ model Student {
   marksEntries     MarksEntry[]
   attendanceRecords AttendanceRecord[]
   resultSnapshots  ResultSnapshot[]
+  studentSubjects  StudentSubject[]
 
   @@map("students")
 }
@@ -92,6 +93,7 @@ model AcademicSession {
   assessments          Assessment[]
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
+  studentSubjects      StudentSubject[]
 
   @@map("academic_sessions")
 }
@@ -105,6 +107,9 @@ model Semester {
   startDate         DateTime
   endDate           DateTime
   isActive          Boolean  @default(true)
+  // Admin-controlled visibility for teacher-facing screens (UI-level filtering)
+  visibleToClassTeachers   Boolean @default(true)
+  visibleToSubjectTeachers Boolean @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -135,6 +140,7 @@ model SchoolClass {
   assessments         Assessment[]
   attendanceRecords   AttendanceRecord[]
   resultSnapshots     ResultSnapshot[]
+  studentSubjects     StudentSubject[]
 
   @@map("school_classes")
 }
@@ -154,6 +160,7 @@ model Section {
   assessments          Assessment[]
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
+  studentSubjects      StudentSubject[]
 
   @@unique([name, schoolClassId])
   @@map("sections")
@@ -172,6 +179,7 @@ model Subject {
   assessments        Assessment[]
   resultSnapshots    ResultSnapshot[]
   classSubjects      ClassSubject[]
+  studentSubjects    StudentSubject[]
 
   @@map("subjects")
 }
@@ -189,6 +197,33 @@ model ClassSubject {
   @@index([schoolClassId])
   @@index([subjectId])
   @@map("class_subjects")
+}
+
+// Per-student subject selection (session-wise). When a student has rows here,
+// marksheets/results only include these subjects; students without rows fall
+// back to the class-wise subject mapping.
+model StudentSubject {
+  id                String          @id @default(cuid())
+  studentId         String
+  student           Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  schoolClassId     String
+  schoolClass       SchoolClass     @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  sectionId         String
+  section           Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId         String
+  subject           Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([studentId, academicSessionId, schoolClassId, sectionId, subjectId], name: "studentId_academicSessionId_schoolClassId_sectionId_subjectId")
+  @@index([studentId])
+  @@index([academicSessionId])
+  @@index([schoolClassId])
+  @@index([sectionId])
+  @@index([subjectId])
+  @@map("student_subjects")
 }
 
 // Student enrollment in a class/section

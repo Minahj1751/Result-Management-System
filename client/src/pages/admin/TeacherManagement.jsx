@@ -262,7 +262,7 @@ export default function TeacherManagement() {
   // Currently active class teacher per pair for the selected session/semester
   const currentClassTeacherByPair = {};
   classAssignments.forEach((a) => {
-    if (a.isActive && a.academicSessionId === bulkClassForm.academicSessionId && a.semesterId === bulkClassForm.semesterId) {
+    if (a.isActive && a.academicSessionId === bulkClassForm.academicSessionId && (!a.semesterId || a.semesterId === bulkClassForm.semesterId)) {
       currentClassTeacherByPair[`${a.schoolClassId}:${a.sectionId}`] = a.teacherId;
     }
   });
@@ -316,7 +316,7 @@ export default function TeacherManagement() {
         if (cancelled) return;
         const map = {};
         rows
-          .filter((a) => a.isActive && (a.semesterId || null) === (semesterId || null))
+          .filter((a) => a.isActive && (!semesterId || !a.semesterId || a.semesterId === semesterId))
           .forEach((a) => { map[a.subjectId] = a.teacherId; });
         setSubjectTeachers(map);
       } catch (error) {

@@ -5,6 +5,7 @@ import { academicAPI } from '../api/academicService';
 import { attendanceAPI } from '../api/attendanceService';
 import { studentAPI } from '../api/studentService';
 import Card from '../components/Card';
+import { filterVisibleAssignments } from '../utils/semesterVisibility';
 
 export default function ClassTeacherDashboard() {
   const [assignments, setAssignments] = useState([]);
@@ -18,7 +19,7 @@ export default function ClassTeacherDashboard() {
   const loadData = async () => {
     try {
       const classAssignments = await teacherAPI.getClassTeacherAssignments();
-      const active = classAssignments.filter((a) => a.isActive);
+      const active = filterVisibleAssignments(classAssignments.filter((a) => a.isActive));
       setAssignments(active);
 
       if (active.length > 0) {
@@ -108,6 +109,12 @@ export default function ClassTeacherDashboard() {
               className="inline-block bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700 text-sm"
             >
               Preview Marksheet
+            </Link>
+            <Link
+              to="/class-teacher/student-subjects"
+              className="inline-block bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 text-sm"
+            >
+              Assign Subjects
             </Link>
           </div>
         </>

@@ -32,4 +32,12 @@ export const exportAPI = {
     const response = await api.get('/export/results', { params, responseType: 'blob' });
     downloadBlob(response.data, `results_export_${Date.now()}.xlsx`);
   },
+  assessments: async (params = {}) => {
+    const response = await api.get('/export/assessments', { params, responseType: 'blob' });
+    downloadBlob(response.data, `assessments_export_${Date.now()}.xlsx`);
+  },
+  marks: async (params = {}) => {
+    const response = await api.get('/export/marks', { params, responseType: 'blob' });
+    downloadBlob(response.data, `marks_export_${Date.now()}.xlsx`);
+  },
 };

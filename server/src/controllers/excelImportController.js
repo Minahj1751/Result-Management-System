@@ -212,6 +212,92 @@ const confirmSubjectImport = async (req, res, next) => {
   }
 };
 
+const sendTemplate = (res, workbook, filename) => {
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+  return workbook.xlsx.write(res).then(() => res.end());
+};
+
+const previewWith = (parseFn, validateFn) => async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const { headers, rows } = await parseFn(req.file.buffer);
+    const validation = await validateFn(rows);
+    res.json({ headers, preview: rows.slice(0, 10), validation });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const confirmWith = (validateFn, confirmFn) => async (req, res, next) => {
+  try {
+    let rows = req.body.rows;
+    if (!rows && Array.isArray(req.body.validRows)) {
+      rows = req.body.validRows.map((r) => (r && r.data ? r.data : r));
+    }
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid rows data' });
+    }
+    const validation = await validateFn(rows);
+    if (validation.invalidRows.length > 0) {
+      return res.status(400).json({
+        error: `${validation.invalidRows.length} row(s) failed validation`,
+        invalidRows: validation.invalidRows,
+      });
+    }
+    const result = await confirmFn(validation.validRows);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Download assessment import template
+ */
+const downloadAssessmentTemplate = async (req, res, next) => {
+  try {
+    const workbook = await excelImportService.generateAssessmentTemplate();
+    await sendTemplate(res, workbook, 'assessment_import_template.xlsx');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const previewAssessmentImport = previewWith(
+  excelImportService.parseAssessmentExcel,
+  excelImportService.validateAssessmentImport
+);
+
+const confirmAssessmentImport = confirmWith(
+  excelImportService.validateAssessmentImport,
+  excelImportService.confirmAssessmentImport
+);
+
+/**
+ * Download marks import template
+ */
+const downloadMarksTemplate = async (req, res, next) => {
+  try {
+    const workbook = await excelImportService.generateMarksTemplate();
+    await sendTemplate(res, workbook, 'marks_import_template.xlsx');
+  } catch (error) {
+    next(error);
+  }
+};
+
+const previewMarksImport = previewWith(
+  excelImportService.parseMarksExcel,
+  excelImportService.validateMarksImport
+);
+
+const confirmMarksImport = confirmWith(
+  excelImportService.validateMarksImport,
+  excelImportService.confirmMarksImport
+);
+
 module.exports = {
   downloadTemplate,
   previewImport,
@@ -222,4 +308,10 @@ module.exports = {
   downloadSubjectTemplate,
   previewSubjectImport,
   confirmSubjectImport,
+  downloadAssessmentTemplate,
+  previewAssessmentImport,
+  confirmAssessmentImport,
+  downloadMarksTemplate,
+  previewMarksImport,
+  confirmMarksImport,
 };

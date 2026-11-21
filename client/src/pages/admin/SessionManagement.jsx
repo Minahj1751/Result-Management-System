@@ -18,7 +18,7 @@ export default function SessionManagement() {
   const [editingId, setEditingId] = useState(null);
   const [editingSemesterId, setEditingSemesterId] = useState(null);
   const [sessionForm, setSessionForm] = useState({ name: '', startDate: '', endDate: '', isActive: true });
-  const [semesterForm, setSemesterForm] = useState({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true });
+  const [semesterForm, setSemesterForm] = useState({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true, visibleToClassTeachers: true, visibleToSubjectTeachers: true });
 
   useEffect(() => {
     loadSessions();
@@ -73,7 +73,7 @@ export default function SessionManagement() {
         await academicAPI.createSemester(semesterForm);
       }
       setIsSemesterModalOpen(false);
-      setSemesterForm({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true });
+      setSemesterForm({ name: '', academicSessionId: '', startDate: '', endDate: '', isActive: true, visibleToClassTeachers: true, visibleToSubjectTeachers: true });
       setIsEditSemester(false);
       setEditingSemesterId(null);
       loadSemesters(semesterForm.academicSessionId);
@@ -90,6 +90,8 @@ export default function SessionManagement() {
       startDate: semester.startDate.split('T')[0],
       endDate: semester.endDate.split('T')[0],
       isActive: semester.isActive,
+      visibleToClassTeachers: semester.visibleToClassTeachers !== false,
+      visibleToSubjectTeachers: semester.visibleToSubjectTeachers !== false,
     });
     setEditingSemesterId(semester.id);
     setIsEditSemester(true);
@@ -181,6 +183,20 @@ export default function SessionManagement() {
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${val ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
           {val ? 'Active' : 'Inactive'}
         </span>
+      ),
+    },
+    {
+      key: 'visibility',
+      label: 'Teacher Visibility',
+      render: (val, row) => (
+        <div className="flex flex-col gap-1 text-xs">
+          <span className={row.visibleToClassTeachers !== false ? 'text-green-700' : 'text-gray-400'}>
+            Class Teacher: {row.visibleToClassTeachers !== false ? 'Visible' : 'Hidden'}
+          </span>
+          <span className={row.visibleToSubjectTeachers !== false ? 'text-green-700' : 'text-gray-400'}>
+            Subject Teacher: {row.visibleToSubjectTeachers !== false ? 'Visible' : 'Hidden'}
+          </span>
+        </div>
       ),
     },
     {
@@ -321,6 +337,29 @@ export default function SessionManagement() {
               className="w-4 h-4 text-blue-600"
             />
             <label htmlFor="isActive" className="text-sm text-gray-700">Active</label>
+          </div>
+          <div className="border-t border-gray-200 pt-3">
+            <p className="text-sm font-medium text-gray-700 mb-2">Teacher Visibility</p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={semesterForm.visibleToClassTeachers}
+                  onChange={(e) => setSemesterForm({ ...semesterForm, visibleToClassTeachers: e.target.checked })}
+                  className="w-4 h-4 text-blue-600"
+                />
+                Visible to Class Teachers
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={semesterForm.visibleToSubjectTeachers}
+                  onChange={(e) => setSemesterForm({ ...semesterForm, visibleToSubjectTeachers: e.target.checked })}
+                  className="w-4 h-4 text-blue-600"
+                />
+                Visible to Subject Teachers
+              </label>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setIsSemesterModalOpen(false)}>

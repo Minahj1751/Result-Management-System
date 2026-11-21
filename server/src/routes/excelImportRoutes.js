@@ -37,4 +37,14 @@ router.get('/subjects/template', authenticate, isAdmin, excelImportController.do
 router.post('/subjects/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewSubjectImport);
 router.post('/subjects/confirm', authenticate, isAdmin, excelImportController.confirmSubjectImport);
 
+// Assessment import routes
+router.get('/assessments/template', authenticate, isAdmin, excelImportController.downloadAssessmentTemplate);
+router.post('/assessments/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewAssessmentImport);
+router.post('/assessments/confirm', authenticate, isAdmin, excelImportController.confirmAssessmentImport);
+
+// Marks import routes
+router.get('/marks/template', authenticate, isAdmin, excelImportController.downloadMarksTemplate);
+router.post('/marks/preview', authenticate, isAdmin, upload.single('file'), excelImportController.previewMarksImport);
+router.post('/marks/confirm', authenticate, isAdmin, excelImportController.confirmMarksImport);
+
 module.exports = router;

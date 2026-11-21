@@ -177,8 +177,21 @@ const getStudentMissingMarks = async (req, res, next) => {
 
     await assertClassTeacherAccess(req, { studentId, academicSessionId, semesterId, schoolClassId, sectionId });
 
+    // Per-student subject selection: only report missing marks for assigned subjects
+    const subjectRows = await prisma.studentSubject.findMany({
+      where: { studentId, academicSessionId, schoolClassId, sectionId },
+      select: { subjectId: true },
+    });
+    const subjectFilter = subjectRows.length > 0 ? new Set(subjectRows.map((r) => r.subjectId)) : null;
+
     const assessments = await prisma.assessment.findMany({
-      where: { academicSessionId, semesterId, schoolClassId, sectionId },
+      where: {
+        academicSessionId,
+        semesterId,
+        schoolClassId,
+        sectionId,
+        ...(subjectFilter && { subjectId: { in: [...subjectFilter] } }),
+      },
       include: {
         subject: true,
         category: true,

@@ -70,4 +70,50 @@ export const importAPI = {
     const response = await api.post('/import/subjects/confirm', { rows });
     return response.data;
   },
+  downloadAssessmentTemplate: async () => {
+    const response = await api.get('/import/assessments/template', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(response.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'assessment_import_template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+  previewAssessments: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/import/assessments/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  confirmAssessments: async (rows) => {
+    const response = await api.post('/import/assessments/confirm', { rows });
+    return response.data;
+  },
+  downloadMarksTemplate: async () => {
+    const response = await api.get('/import/marks/template', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(response.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'marks_import_template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+  previewMarks: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/import/marks/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  confirmMarks: async (rows) => {
+    const response = await api.post('/import/marks/confirm', { rows });
+    return response.data;
+  },
 };

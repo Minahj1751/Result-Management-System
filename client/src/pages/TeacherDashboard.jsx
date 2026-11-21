@@ -5,6 +5,7 @@ import { academicAPI } from '../api/academicService';
 import { assessmentAPI } from '../api/assessmentService';
 import { marksAPI } from '../api/marksService';
 import Card from '../components/Card';
+import { filterVisibleAssignments } from '../utils/semesterVisibility';
 
 const getUser = () => JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -26,8 +27,8 @@ export default function TeacherDashboard() {
         teacherAPI.getTeacherAssignments(),
         teacherAPI.getClassTeacherAssignments(),
       ]);
-      setAssignments(subjectAssignments.filter((a) => a.isActive));
-      setClassAssignments(classTeacherAssignments.filter((a) => a.isActive));
+      setAssignments(filterVisibleAssignments(subjectAssignments.filter((a) => a.isActive)));
+      setClassAssignments(filterVisibleAssignments(classTeacherAssignments.filter((a) => a.isActive)));
 
       // Pending marks: assessments matching my assignments that aren't fully entered
       if (subjectAssignments.length > 0) {

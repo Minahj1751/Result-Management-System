@@ -887,6 +887,546 @@ const confirmSubjectImport = async (rows) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Shared helpers for the newer import types
+// ---------------------------------------------------------------------------
+
+const styleSheet = (worksheet) => {
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FFE0E0E0' },
+  };
+};
+
+const parseSheet = async (buffer, markerHeader) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    throw new Error('No worksheet found in the file');
+  }
+
+  const rows = [];
+  const headers = [];
+  let headerRow = 1;
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (row.values[1] === markerHeader) {
+      headerRow = rowNumber;
+    }
+  });
+
+  worksheet.getRow(headerRow).eachCell((cell, colNumber) => {
+    headers[colNumber] = cell.value;
+  });
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber > headerRow) {
+      const rowData = {};
+      row.eachCell((c, colNumber) => {
+        const header = headers[colNumber];
+        if (header == null) return;
+        const key = String(header).replace(/\*+$/, '');
+        rowData[key] = c.value;
+      });
+      if (Object.keys(rowData).length > 0) {
+        rows.push(rowData);
+      }
+    }
+  });
+
+  return { headers, rows };
+};
+
+const lowerMap = (items, keyFn) => {
+  const map = new Map();
+  items.forEach((item) => {
+    const key = keyFn(item);
+    if (key) map.set(String(key).toLowerCase(), item);
+  });
+  return map;
+};
+
+// ---------------------------------------------------------------------------
+// Assessment import
+// ---------------------------------------------------------------------------
+
+const ASSESSMENT_STATUSES = ['DRAFT', 'SUBMITTED', 'REVIEWED', 'APPROVED'];
+const PUBLICATION_STATUSES = ['DRAFT', 'PUBLISHED'];
+
+const generateAssessmentTemplate = async () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Assessments');
+
+  worksheet.columns = [
+    { header: 'Session*', key: 'session', width: 18 },
+    { header: 'Semester*', key: 'semester', width: 18 },
+    { header: 'Class*', key: 'className', width: 12 },
+    { header: 'Section*', key: 'section', width: 10 },
+    { header: 'Subject*', key: 'subject', width: 20 },
+    { header: 'Category*', key: 'category', width: 18 },
+    { header: 'Assessment Name*', key: 'assessmentName', width: 25 },
+    { header: 'Maximum Marks*', key: 'maximumMarks', width: 15 },
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Submission Status', key: 'submissionStatus', width: 18 },
+    { header: 'Publication Status', key: 'publicationStatus', width: 18 },
+  ];
+
+  worksheet.addRow({
+    session: '2025-26',
+    semester: 'First Term',
+    className: 'Grade 9',
+    section: 'A',
+    subject: 'Mathematics',
+    category: 'Class Test',
+    assessmentName: 'CT-1',
+    maximumMarks: 20,
+    date: '2025-09-10',
+    submissionStatus: 'DRAFT',
+    publicationStatus: 'DRAFT',
+  });
+
+  styleSheet(worksheet);
+  return workbook;
+};
+
+const parseAssessmentExcel = async (buffer) => parseSheet(buffer, 'Session*');
+
+const loadAssessmentLookups = async () => {
+  const [sessions, semesters, classes, sections, subjects, categories] = await Promise.all([
+    prisma.academicSession.findMany(),
+    prisma.semester.findMany({ include: { academicSession: true } }),
+    prisma.schoolClass.findMany(),
+    prisma.section.findMany({ include: { schoolClass: true } }),
+    prisma.subject.findMany(),
+    prisma.assessmentCategory.findMany(),
+  ]);
+
+  const semesterByKey = new Map();
+  semesters.forEach((s) => {
+    semesterByKey.set(`${s.academicSession.name}|${s.name}`.toLowerCase(), s);
+    semesterByKey.set(s.name.toLowerCase(), s);
+  });
+
+  const sectionByKey = new Map();
+  sections.forEach((s) => {
+    sectionByKey.set(`${s.schoolClass.name}|${s.name}`.toLowerCase(), s);
+    sectionByKey.set(s.name.toLowerCase(), s);
+  });
+
+  const subjectByName = lowerMap(subjects, (s) => s.name);
+  subjects.forEach((s) => { if (s.code) subjectByName.set(s.code.toLowerCase(), s); });
+
+  const categoryByName = lowerMap(categories, (c) => c.name);
+  categories.forEach((c) => { if (c.code) categoryByName.set(c.code.toLowerCase(), c); });
+
+  return {
+    sessionByName: lowerMap(sessions, (s) => s.name),
+    semesterByKey,
+    classByName: lowerMap(classes, (c) => c.name),
+    sectionByKey,
+    subjectByName,
+    categoryByName,
+  };
+};
+
+const resolveAssessmentRow = (row, lk) => {
+  const errors = [];
+  const sessionName = str(cell(row, 'Session'));
+  const semesterName = str(cell(row, 'Semester'));
+  const className = str(cell(row, 'Class'));
+  const sectionName = str(cell(row, 'Section'));
+  const subjectName = str(cell(row, 'Subject'));
+  const categoryName = str(cell(row, 'Category'));
+  const assessmentName = str(cell(row, 'Assessment Name'));
+
+  const session = lk.sessionByName.get(sessionName.toLowerCase());
+  if (!sessionName) errors.push('Session is required');
+  else if (!session) errors.push(`Session "${sessionName}" not found`);
+
+  let semester = null;
+  if (semesterName) {
+    semester = lk.semesterByKey.get(`${sessionName}|${semesterName}`.toLowerCase())
+      || lk.semesterByKey.get(semesterName.toLowerCase());
+    if (!semester) errors.push(`Semester "${semesterName}" not found`);
+    else if (session && semester.academicSessionId !== session.id) {
+      errors.push(`Semester "${semesterName}" does not belong to session "${sessionName}"`);
+    }
+  } else {
+    errors.push('Semester is required');
+  }
+
+  const schoolClass = lk.classByName.get(className.toLowerCase());
+  if (!className) errors.push('Class is required');
+  else if (!schoolClass) errors.push(`Class "${className}" not found`);
+
+  let section = null;
+  if (sectionName) {
+    section = lk.sectionByKey.get(`${className}|${sectionName}`.toLowerCase())
+      || lk.sectionByKey.get(sectionName.toLowerCase());
+    if (!section) errors.push(`Section "${sectionName}" not found`);
+    else if (schoolClass && section.schoolClassId !== schoolClass.id) {
+      errors.push(`Section "${sectionName}" does not belong to class "${className}"`);
+    }
+  } else {
+    errors.push('Section is required');
+  }
+
+  const subject = lk.subjectByName.get(subjectName.toLowerCase());
+  if (!subjectName) errors.push('Subject is required');
+  else if (!subject) errors.push(`Subject "${subjectName}" not found`);
+
+  const category = lk.categoryByName.get(categoryName.toLowerCase());
+  if (!categoryName) errors.push('Category is required');
+  else if (!category) errors.push(`Category "${categoryName}" not found`);
+
+  if (!assessmentName) errors.push('Assessment Name is required');
+
+  const maxRaw = cell(row, 'Maximum Marks');
+  const maximumMarks = maxRaw === undefined || maxRaw === null || maxRaw === '' ? NaN : Number(maxRaw);
+  if (!Number.isFinite(maximumMarks) || maximumMarks <= 0) {
+    errors.push('Maximum Marks must be a positive number');
+  }
+
+  const submissionStatus = str(cell(row, 'Submission Status')).toUpperCase();
+  if (submissionStatus && !ASSESSMENT_STATUSES.includes(submissionStatus)) {
+    errors.push(`Submission Status must be one of: ${ASSESSMENT_STATUSES.join(', ')}`);
+  }
+  const publicationStatus = str(cell(row, 'Publication Status')).toUpperCase();
+  if (publicationStatus && !PUBLICATION_STATUSES.includes(publicationStatus)) {
+    errors.push(`Publication Status must be one of: ${PUBLICATION_STATUSES.join(', ')}`);
+  }
+
+  return {
+    errors,
+    resolved: {
+      session,
+      semester,
+      schoolClass,
+      section,
+      subject,
+      category,
+      assessmentName,
+      maximumMarks,
+      defaultDate: toDate(cell(row, 'Date')),
+      submissionStatus: submissionStatus || null,
+      publicationStatus: publicationStatus || null,
+    },
+  };
+};
+
+const assessmentKey = (r) =>
+  [r.session?.id, r.semester?.id, r.schoolClass?.id, r.section?.id, r.subject?.id, r.category?.id, r.assessmentName]
+    .map((v) => (v || '').toString().toLowerCase()).join('|');
+
+const validateAssessmentImport = async (rows) => {
+  const lk = await loadAssessmentLookups();
+  const validRows = [];
+  const invalidRows = [];
+  const seenKeys = new Set();
+  const duplicates = [];
+
+  const existing = await prisma.assessment.findMany({
+    include: { category: true, academicSession: true, semester: true, schoolClass: true, section: true, subject: true },
+  });
+  const existingKeys = new Map(existing.map((a) => [
+    [a.academicSessionId, a.semesterId, a.schoolClassId, a.sectionId, a.subjectId, a.categoryId, a.name.toLowerCase()].join('|'),
+    a,
+  ]));
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const { errors, resolved } = resolveAssessmentRow(row, lk);
+
+    if (errors.length === 0) {
+      const key = assessmentKey(resolved);
+      if (seenKeys.has(key)) {
+        errors.push('Duplicate assessment in file');
+        duplicates.push(resolved.assessmentName);
+      } else {
+        seenKeys.add(key);
+      }
+    }
+
+    if (errors.length > 0) {
+      invalidRows.push({ rowNumber: i + 2, data: row, errors });
+    } else {
+      const dbKey = [resolved.session.id, resolved.semester.id, resolved.schoolClass.id, resolved.section.id,
+        resolved.subject.id, resolved.category.id, resolved.assessmentName.toLowerCase()].join('|');
+      validRows.push({ data: row, resolved, existing: existingKeys.get(dbKey) || null });
+    }
+  }
+
+  return { totalRows: rows.length, validRows, invalidRows, duplicates };
+};
+
+const confirmAssessmentImport = async (validRows) => {
+  const imported = [];
+  const errors = [];
+
+  for (const item of validRows) {
+    const r = item.resolved || item;
+    try {
+      const data = {
+        name: r.assessmentName,
+        categoryId: r.category.id,
+        academicSessionId: r.session.id,
+        semesterId: r.semester.id,
+        schoolClassId: r.schoolClass.id,
+        sectionId: r.section.id,
+        subjectId: r.subject.id,
+        maximumMarks: r.maximumMarks,
+        defaultDate: r.defaultDate,
+        ...(r.submissionStatus && { submissionStatus: r.submissionStatus }),
+        ...(r.publicationStatus && { publicationStatus: r.publicationStatus }),
+      };
+      const existing = item.existing || null;
+      const assessment = existing
+        ? await prisma.assessment.update({ where: { id: existing.id }, data })
+        : await prisma.assessment.create({ data });
+      imported.push(assessment);
+    } catch (error) {
+      errors.push({ data: item.data || item, error: error.message });
+    }
+  }
+
+  return { importedCount: imported.length, failedCount: errors.length, imported, errors };
+};
+
+// ---------------------------------------------------------------------------
+// Marks import
+// ---------------------------------------------------------------------------
+
+const MARK_STATUSES = ['PENDING', 'ABSENT', 'EXEMPTED', 'NOT_APPLICABLE'];
+
+const generateMarksTemplate = async () => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Marks');
+
+  worksheet.columns = [
+    { header: 'Student ID*', key: 'studentId', width: 15 },
+    { header: 'Session*', key: 'session', width: 18 },
+    { header: 'Semester*', key: 'semester', width: 18 },
+    { header: 'Class*', key: 'className', width: 12 },
+    { header: 'Section*', key: 'section', width: 10 },
+    { header: 'Subject*', key: 'subject', width: 20 },
+    { header: 'Assessment*', key: 'assessment', width: 25 },
+    { header: 'Category', key: 'category', width: 18 },
+    { header: 'Marks', key: 'marks', width: 10 },
+    { header: 'Status', key: 'status', width: 15 },
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Remarks', key: 'remarks', width: 25 },
+    { header: 'Teacher Email', key: 'teacherEmail', width: 25 },
+  ];
+
+  worksheet.addRow({
+    studentId: 'STU00001',
+    session: '2025-26',
+    semester: 'First Term',
+    className: 'Grade 9',
+    section: 'A',
+    subject: 'Mathematics',
+    assessment: 'CT-1',
+    category: 'Class Test',
+    marks: 18,
+    status: 'PENDING',
+    date: '',
+    remarks: '',
+    teacherEmail: '',
+  });
+
+  styleSheet(worksheet);
+  return workbook;
+};
+
+const parseMarksExcel = async (buffer) => parseSheet(buffer, 'Student ID*');
+
+const validateMarksImport = async (rows) => {
+  const lk = await loadAssessmentLookups();
+
+  const [students, assessments, users] = await Promise.all([
+    prisma.student.findMany({ select: { id: true, studentId: true, admissionNumber: true, fullName: true } }),
+    prisma.assessment.findMany({
+      include: { category: true, academicSession: true, semester: true, schoolClass: true, section: true, subject: true },
+    }),
+    prisma.user.findMany({
+      where: { role: { in: ['SUBJECT_TEACHER', 'CLASS_TEACHER', 'ADMIN'] }, isActive: true },
+      include: { teacherProfile: true },
+    }),
+  ]);
+
+  const studentById = lowerMap(students, (s) => s.studentId);
+  students.forEach((s) => { if (s.admissionNumber) studentById.set(s.admissionNumber.toLowerCase(), s); });
+
+  const assessmentByScopeName = new Map();
+  assessments.forEach((a) => {
+    const key = [a.academicSession.name, a.semester.name, a.schoolClass.name, a.section.name, a.subject.name, a.name]
+      .map((v) => String(v).toLowerCase()).join('|');
+    if (!assessmentByScopeName.has(key)) assessmentByScopeName.set(key, []);
+    assessmentByScopeName.get(key).push(a);
+  });
+
+  const teacherByEmail = new Map();
+  users.forEach((u) => {
+    if (u.teacherProfile) teacherByEmail.set(u.email.toLowerCase(), u.teacherProfile);
+  });
+
+  // Fallback teacher: first active subject assignment matching assessment scope
+  const fallbackTeachers = new Map();
+  const getFallbackTeacher = async (assessment) => {
+    if (fallbackTeachers.has(assessment.id)) return fallbackTeachers.get(assessment.id);
+    const assignment = await prisma.teacherAssignment.findFirst({
+      where: {
+        subjectId: assessment.subjectId,
+        academicSessionId: assessment.academicSessionId,
+        OR: [{ semesterId: assessment.semesterId }, { semesterId: null }],
+        schoolClassId: assessment.schoolClassId,
+        sectionId: assessment.sectionId,
+        isActive: true,
+      },
+      select: { teacherId: true },
+    });
+    fallbackTeachers.set(assessment.id, assignment?.teacherId || null);
+    return assignment?.teacherId || null;
+  };
+
+  const validRows = [];
+  const invalidRows = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const errors = [];
+
+    const studentKey = str(cell(row, 'Student ID'));
+    const student = studentById.get(studentKey.toLowerCase());
+    if (!studentKey) errors.push('Student ID is required');
+    else if (!student) errors.push(`Student "${studentKey}" not found`);
+
+    const scope = resolveAssessmentRow({ ...row, 'Assessment Name': cell(row, 'Assessment'), 'Maximum Marks': 1 }, lk);
+    // Reuse scope resolution but ignore assessment-name/marks errors
+    const scopeErrors = scope.errors.filter((e) =>
+      !e.includes('Assessment Name') && !e.includes('Maximum Marks') && !e.includes('Submission Status') && !e.includes('Publication Status'));
+    errors.push(...scopeErrors);
+    const { session, semester, schoolClass, section, subject, category } = scope.resolved;
+
+    const assessmentName = str(cell(row, 'Assessment'));
+    if (!assessmentName) errors.push('Assessment is required');
+
+    let assessment = null;
+    if (!scopeErrors.length && assessmentName) {
+      const key = [session.name, semester.name, schoolClass.name, section.name, subject.name, assessmentName]
+        .map((v) => String(v).toLowerCase()).join('|');
+      const matches = (assessmentByScopeName.get(key) || []).filter((a) => {
+        if (!category) return true;
+        return a.categoryId === category.id;
+      });
+      const categoryName = str(cell(row, 'Category'));
+      if (matches.length === 0) {
+        errors.push(`Assessment "${assessmentName}" not found for this class/subject`);
+      } else if (matches.length > 1 && categoryName && !category) {
+        errors.push(`Multiple assessments named "${assessmentName}" — please fill the Category column`);
+      } else if (matches.length > 1) {
+        errors.push(`Assessment "${assessmentName}" is ambiguous — check Category`);
+      } else {
+        assessment = matches[0];
+      }
+    }
+
+    const marksRaw = cell(row, 'Marks');
+    const marks = marksRaw === undefined || marksRaw === null || marksRaw === '' ? null : Number(marksRaw);
+    if (marks !== null && (!Number.isFinite(marks) || marks < 0)) {
+      errors.push('Marks must be a non-negative number');
+    } else if (marks !== null && assessment && marks > parseFloat(assessment.maximumMarks)) {
+      errors.push(`Marks cannot exceed maximum (${assessment.maximumMarks})`);
+    }
+
+    const status = str(cell(row, 'Status')).toUpperCase() || 'PENDING';
+    if (!MARK_STATUSES.includes(status)) {
+      errors.push(`Status must be one of: ${MARK_STATUSES.join(', ')}`);
+    }
+    if (status !== 'PENDING' && marks !== null) {
+      errors.push('Marks and Status are mutually exclusive — fill only one');
+    }
+    if (status === 'PENDING' && marks === null) {
+      errors.push('Provide either Marks or a Status (ABSENT/EXEMPTED/NOT_APPLICABLE)');
+    }
+
+    const teacherEmail = str(cell(row, 'Teacher Email'));
+    let teacherProfile = null;
+    if (teacherEmail) {
+      teacherProfile = teacherByEmail.get(teacherEmail.toLowerCase());
+      if (!teacherProfile) errors.push(`Teacher "${teacherEmail}" not found`);
+    } else if (assessment) {
+      teacherProfile = { id: await getFallbackTeacher(assessment) };
+      if (!teacherProfile.id) {
+        errors.push('No teacher assigned to this subject — fill Teacher Email');
+      }
+    }
+
+    if (errors.length > 0) {
+      invalidRows.push({ rowNumber: i + 2, data: row, errors });
+    } else {
+      validRows.push({
+        data: row,
+        resolved: {
+          student,
+          assessment,
+          marksObtained: marks,
+          status,
+          individualDate: toDate(cell(row, 'Date')),
+          remarks: str(cell(row, 'Remarks')) || null,
+          teacherId: teacherProfile.id,
+        },
+      });
+    }
+  }
+
+  return { totalRows: rows.length, validRows, invalidRows };
+};
+
+const confirmMarksImport = async (validRows) => {
+  const imported = [];
+  const errors = [];
+
+  for (const item of validRows) {
+    const r = item.resolved || item;
+    try {
+      const entry = await prisma.marksEntry.upsert({
+        where: {
+          studentId_assessmentId: {
+            studentId: r.student.id,
+            assessmentId: r.assessment.id,
+          },
+        },
+        update: {
+          marksObtained: r.marksObtained,
+          status: r.status,
+          individualDate: r.individualDate,
+          remarks: r.remarks,
+          teacherId: r.teacherId,
+        },
+        create: {
+          studentId: r.student.id,
+          assessmentId: r.assessment.id,
+          marksObtained: r.marksObtained,
+          status: r.status,
+          individualDate: r.individualDate,
+          remarks: r.remarks,
+          teacherId: r.teacherId,
+        },
+      });
+      imported.push(entry);
+    } catch (error) {
+      errors.push({ data: item.data || item, error: error.message });
+    }
+  }
+
+  return { importedCount: imported.length, failedCount: errors.length, imported, errors };
+};
+
 module.exports = {
   generateStudentTemplate,
   parseStudentExcel,
@@ -900,4 +1440,12 @@ module.exports = {
   parseSubjectExcel,
   validateSubjectImport,
   confirmSubjectImport,
+  generateAssessmentTemplate,
+  parseAssessmentExcel,
+  validateAssessmentImport,
+  confirmAssessmentImport,
+  generateMarksTemplate,
+  parseMarksExcel,
+  validateMarksImport,
+  confirmMarksImport,
 };

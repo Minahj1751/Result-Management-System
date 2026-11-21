@@ -19,6 +19,7 @@ import ExcelImport from './pages/admin/ExcelImport';
 import MarksEntry from './pages/teacher/MarksEntry';
 import AttendanceManagement from './pages/classTeacher/AttendanceManagement';
 import ClassTeacherMarksheetPreview from './pages/classTeacher/MarksheetPreview';
+import StudentSubjects from './pages/classTeacher/StudentSubjects';
 import './style.css';
 
 const getStoredUser = () => {
@@ -106,6 +107,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="dashboard" element={<ClassTeacherDashboard />} />
           <Route path="attendance" element={<AttendanceManagement />} />
           <Route path="marksheet-preview" element={<ClassTeacherMarksheetPreview />} />
+          <Route path="student-subjects" element={<StudentSubjects />} />
         </Route>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />

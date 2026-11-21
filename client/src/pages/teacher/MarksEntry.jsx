@@ -3,11 +3,13 @@ import { academicAPI } from '../../api/academicService';
 import { teacherAPI } from '../../api/teacherService';
 import { assessmentAPI } from '../../api/assessmentService';
 import { marksAPI } from '../../api/marksService';
+import { exportAPI } from '../../api/exportService';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
+import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
 export default function MarksEntry() {
   const [myAssignments, setMyAssignments] = useState([]);
@@ -21,6 +23,7 @@ export default function MarksEntry() {
   const [sessions, setSessions] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [sections, setSections] = useState([]);
+  const [classSubjectIds, setClassSubjectIds] = useState([]);
   const [selectedAssessment, setSelectedAssessment] = useState(null);
   const [marks, setMarks] = useState({});
   const [statuses, setStatuses] = useState({});
@@ -39,7 +42,7 @@ export default function MarksEntry() {
         teacherAPI.getTeacherAssignments(),
       ]);
       setSessions(sessionsData);
-      const active = assignments.filter((a) => a.isActive);
+      const active = filterVisibleAssignments(assignments.filter((a) => a.isActive));
       setMyAssignments(active);
 
       // Pre-fill filter from first assignment
@@ -52,12 +55,14 @@ export default function MarksEntry() {
           sectionId: first.sectionId,
           subjectId: first.subjectId,
         });
-        const [sems, secs] = await Promise.all([
+        const [sems, secs, classSubs] = await Promise.all([
           academicAPI.getSemesters(first.academicSessionId),
           academicAPI.getSections(first.schoolClassId),
+          academicAPI.getClassSubjects(first.schoolClassId),
         ]);
-        setSemesters(sems);
+        setSemesters(filterVisibleSemesters(sems));
         setSections(secs);
+        setClassSubjectIds((classSubs || []).map((m) => m.subjectId || m.subject?.id).filter(Boolean));
         loadAssessmentsFor(first);
       }
     } catch (error) {
@@ -72,7 +77,8 @@ export default function MarksEntry() {
       setLoading(true);
       const data = await assessmentAPI.getAssessments(cleanParams({
         academicSessionId: assignment.academicSessionId,
-        semesterId: assignment.semesterId,
+        // Session-level assignments apply to whichever semester is selected
+        semesterId: filter.semesterId || assignment.semesterId,
         schoolClassId: assignment.schoolClassId,
         sectionId: assignment.sectionId,
         subjectId: assignment.subjectId,
@@ -93,12 +99,15 @@ export default function MarksEntry() {
     setFilter(newFilter);
 
     if (key === 'academicSessionId') {
-      academicAPI.getSemesters(value).then(setSemesters);
+      academicAPI.getSemesters(value).then((sems) => setSemesters(filterVisibleSemesters(sems)));
       setFilter((f) => ({ ...f, semesterId: '' }));
     }
     if (key === 'schoolClassId') {
       academicAPI.getSections(value).then(setSections);
-      setFilter((f) => ({ ...f, sectionId: '' }));
+      academicAPI.getClassSubjects(value)
+        .then((mappings) => setClassSubjectIds((mappings || []).map((m) => m.subjectId || m.subject?.id).filter(Boolean)))
+        .catch(() => setClassSubjectIds([]));
+      setFilter((f) => ({ ...f, sectionId: '', subjectId: '' }));
     }
   };
 
@@ -203,9 +212,49 @@ export default function MarksEntry() {
     },
   ];
 
-  // Available filter options restricted to my assignments
-  const mySubjects = [...new Map(myAssignments.map((a) => [a.subjectId, a.subject])).values()];
-  const myClasses = [...new Map(myAssignments.map((a) => [`${a.schoolClassId}-${a.sectionId}`, a])).values()];
+  // Filter options are scoped to the teacher's own assignments and narrowed
+  // by the filters already selected (session -> class -> section -> subject).
+  // Session-level assignments (semesterId null) apply to every semester.
+  const assignmentMatches = (a, scope) =>
+    (!scope.academicSessionId || a.academicSessionId === scope.academicSessionId) &&
+    (!scope.semesterId || !a.semesterId || a.semesterId === scope.semesterId) &&
+    (!scope.schoolClassId || a.schoolClassId === scope.schoolClassId) &&
+    (!scope.sectionId || a.sectionId === scope.sectionId) &&
+    (!scope.subjectId || a.subjectId === scope.subjectId);
+
+  const toOptions = (list, valueKey, labelFn) =>
+    [...new Map(list.map((a) => [a[valueKey], a])).values()]
+      .map((a) => ({ value: a[valueKey], label: labelFn(a) }));
+
+  const classOptions = toOptions(
+    myAssignments.filter((a) => assignmentMatches(a, {
+      academicSessionId: filter.academicSessionId,
+      semesterId: filter.semesterId,
+    })),
+    'schoolClassId',
+    (a) => a.schoolClass?.name || 'Class'
+  );
+
+  const sectionOptions = toOptions(
+    myAssignments.filter((a) => assignmentMatches(a, {
+      academicSessionId: filter.academicSessionId,
+      semesterId: filter.semesterId,
+      schoolClassId: filter.schoolClassId,
+    })),
+    'sectionId',
+    (a) => a.section?.name || 'Section'
+  );
+
+  const subjectOptions = toOptions(
+    myAssignments.filter((a) => assignmentMatches(a, {
+      academicSessionId: filter.academicSessionId,
+      semesterId: filter.semesterId,
+      schoolClassId: filter.schoolClassId,
+      sectionId: filter.sectionId,
+    })),
+    'subjectId',
+    (a) => a.subject?.name || 'Subject'
+  ).filter((o) => classSubjectIds.length === 0 || classSubjectIds.includes(o.value));
 
   const q = studentSearch.trim().toLowerCase();
   const visibleStudents = q
@@ -240,20 +289,19 @@ export default function MarksEntry() {
                 options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
               <Select placeholder="Class" value={filter.schoolClassId}
                 onChange={(e) => handleAssignmentChange('schoolClassId', e.target.value)}
-                options={[...new Map(myAssignments.map((a) => [a.schoolClassId, a.schoolClass])).values()]
-                  .map((c) => ({ value: c.id, label: c.name }))} />
+                options={classOptions} />
               <Select placeholder="Section" value={filter.sectionId}
                 onChange={(e) => handleAssignmentChange('sectionId', e.target.value)}
-                options={sections.map((s) => ({ value: s.id, label: s.name }))} />
+                options={sectionOptions} />
               <Select placeholder="Subject" value={filter.subjectId}
                 onChange={(e) => handleAssignmentChange('subjectId', e.target.value)}
-                options={mySubjects.map((s) => ({ value: s.id, label: s.name }))} />
+                options={subjectOptions} />
             </div>
             <div className="mt-4">
               <Button onClick={() => {
                 const assignment = myAssignments.find((a) =>
                   a.academicSessionId === filter.academicSessionId &&
-                  a.semesterId === filter.semesterId &&
+                  (!a.semesterId || a.semesterId === filter.semesterId) &&
                   a.schoolClassId === filter.schoolClassId &&
                   a.sectionId === filter.sectionId &&
                   a.subjectId === filter.subjectId
@@ -262,6 +310,12 @@ export default function MarksEntry() {
                 else alert('No assignment matches the selected filters');
               }} disabled={loading}>
                 {loading ? 'Loading...' : 'Load Assessments'}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => exportAPI.marks(cleanParams(filter)).catch(() => alert('Error exporting marks'))}
+              >
+                Export Marks
               </Button>
             </div>
           </Card>

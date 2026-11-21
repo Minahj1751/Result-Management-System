@@ -347,10 +347,172 @@ const exportSubjects = async (req, res, next) => {
   }
 };
 
+/**
+ * Export assessments to Excel (same column layout as the import template)
+ */
+const exportAssessments = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId, subjectId, categoryId } = req.query;
+
+    const assessments = await prisma.assessment.findMany({
+      where: {
+        ...(academicSessionId && { academicSessionId }),
+        ...(semesterId && { semesterId }),
+        ...(schoolClassId && { schoolClassId }),
+        ...(sectionId && { sectionId }),
+        ...(subjectId && { subjectId }),
+        ...(categoryId && { categoryId }),
+      },
+      include: {
+        category: true,
+        academicSession: true,
+        semester: true,
+        schoolClass: true,
+        section: true,
+        subject: true,
+      },
+      orderBy: [{ academicSession: { name: 'asc' } }, { semester: { name: 'asc' } }, { name: 'asc' }],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Assessments');
+    ws.columns = [
+      { header: 'Session', key: 'session', width: 18 },
+      { header: 'Semester', key: 'semester', width: 18 },
+      { header: 'Class', key: 'className', width: 12 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Subject', key: 'subject', width: 20 },
+      { header: 'Category', key: 'category', width: 18 },
+      { header: 'Assessment Name', key: 'assessmentName', width: 25 },
+      { header: 'Maximum Marks', key: 'maximumMarks', width: 15 },
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Submission Status', key: 'submissionStatus', width: 18 },
+      { header: 'Publication Status', key: 'publicationStatus', width: 18 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const a of assessments) {
+      ws.addRow({
+        session: a.academicSession?.name || '',
+        semester: a.semester?.name || '',
+        className: a.schoolClass?.name || '',
+        section: a.section?.name || '',
+        subject: a.subject?.name || '',
+        category: a.category?.name || '',
+        assessmentName: a.name,
+        maximumMarks: parseFloat(a.maximumMarks),
+        date: a.defaultDate ? a.defaultDate.toISOString().slice(0, 10) : '',
+        submissionStatus: a.submissionStatus,
+        publicationStatus: a.publicationStatus,
+      });
+    }
+
+    await sendWorkbook(res, workbook, `assessments_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Export marks entries to Excel (same column layout as the import template)
+ */
+const exportMarks = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId, subjectId, assessmentId, studentId } = req.query;
+
+    const entries = await prisma.marksEntry.findMany({
+      where: {
+        ...(studentId && { studentId }),
+        ...(assessmentId && { assessmentId }),
+        ...(academicSessionId || semesterId || schoolClassId || sectionId || subjectId
+          ? {
+              assessment: {
+                ...(academicSessionId && { academicSessionId }),
+                ...(semesterId && { semesterId }),
+                ...(schoolClassId && { schoolClassId }),
+                ...(sectionId && { sectionId }),
+                ...(subjectId && { subjectId }),
+              },
+            }
+          : {}),
+      },
+      include: {
+        student: { include: { enrollments: true } },
+        assessment: {
+          include: {
+            category: true,
+            academicSession: true,
+            semester: true,
+            schoolClass: true,
+            section: true,
+            subject: true,
+          },
+        },
+        teacher: true,
+      },
+      orderBy: [{ student: { studentId: 'asc' } }, { assessment: { name: 'asc' } }],
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Marks');
+    ws.columns = [
+      { header: 'Student ID', key: 'studentId', width: 15 },
+      { header: 'Session', key: 'session', width: 18 },
+      { header: 'Semester', key: 'semester', width: 18 },
+      { header: 'Class', key: 'className', width: 12 },
+      { header: 'Section', key: 'section', width: 10 },
+      { header: 'Subject', key: 'subject', width: 20 },
+      { header: 'Assessment', key: 'assessment', width: 25 },
+      { header: 'Category', key: 'category', width: 18 },
+      { header: 'Maximum Marks', key: 'maximumMarks', width: 15 },
+      { header: 'Marks', key: 'marks', width: 10 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Remarks', key: 'remarks', width: 25 },
+      { header: 'Teacher', key: 'teacher', width: 25 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const e of entries) {
+      const a = e.assessment;
+      const enrollment = (e.student?.enrollments || []).find((en) =>
+        en.academicSessionId === a.academicSessionId &&
+        en.schoolClassId === a.schoolClassId &&
+        en.sectionId === a.sectionId &&
+        (en.semesterId === a.semesterId || en.semesterId === null)
+      );
+      ws.addRow({
+        studentId: e.student?.studentId || '',
+        session: a.academicSession?.name || '',
+        semester: a.semester?.name || '',
+        className: a.schoolClass?.name || '',
+        section: a.section?.name || '',
+        subject: a.subject?.name || '',
+        assessment: a.name,
+        category: a.category?.name || '',
+        maximumMarks: parseFloat(a.maximumMarks),
+        marks: e.marksObtained !== null && e.marksObtained !== undefined ? parseFloat(e.marksObtained) : '',
+        status: e.status,
+        date: (e.individualDate || a.defaultDate)
+          ? new Date(e.individualDate || a.defaultDate).toISOString().slice(0, 10)
+          : '',
+        remarks: e.remarks || '',
+        teacher: e.teacher?.fullName || '',
+      });
+    }
+
+    await sendWorkbook(res, workbook, `marks_export_${Date.now()}.xlsx`);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   exportStudents,
   exportTeachers,
   exportSubjects,
   exportAttendance,
   exportResults,
+  exportAssessments,
+  exportMarks,
 };

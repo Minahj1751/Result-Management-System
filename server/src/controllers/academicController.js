@@ -115,7 +115,7 @@ const getSemesters = async (req, res, next) => {
  */
 const createSemester = async (req, res, next) => {
   try {
-    const { name, academicSessionId, startDate, endDate, isActive } = req.body;
+    const { name, academicSessionId, startDate, endDate, isActive, visibleToClassTeachers, visibleToSubjectTeachers } = req.body;
 
     const semester = await prisma.semester.create({
       data: {
@@ -124,6 +124,8 @@ const createSemester = async (req, res, next) => {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         isActive: isActive !== undefined ? isActive : true,
+        visibleToClassTeachers: visibleToClassTeachers !== undefined ? visibleToClassTeachers : true,
+        visibleToSubjectTeachers: visibleToSubjectTeachers !== undefined ? visibleToSubjectTeachers : true,
       },
     });
 
@@ -139,7 +141,7 @@ const createSemester = async (req, res, next) => {
 const updateSemester = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, startDate, endDate, isActive } = req.body;
+    const { name, startDate, endDate, isActive, visibleToClassTeachers, visibleToSubjectTeachers } = req.body;
 
     const semester = await prisma.semester.update({
       where: { id },
@@ -148,6 +150,8 @@ const updateSemester = async (req, res, next) => {
         ...(startDate && { startDate: new Date(startDate) }),
         ...(endDate && { endDate: new Date(endDate) }),
         ...(isActive !== undefined && { isActive }),
+        ...(visibleToClassTeachers !== undefined && { visibleToClassTeachers }),
+        ...(visibleToSubjectTeachers !== undefined && { visibleToSubjectTeachers }),
       },
     });
 

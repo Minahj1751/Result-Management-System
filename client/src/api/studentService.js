@@ -29,4 +29,12 @@ export const studentAPI = {
     const response = await api.patch(`/students/enrollments/${id}`, data);
     return response.data;
   },
+  getStudentSubjects: async (params) => {
+    const response = await api.get('/student-subjects', { params });
+    return response.data;
+  },
+  setStudentSubjects: async (data) => {
+    const response = await api.put('/student-subjects', data);
+    return response.data;
+  },
 };

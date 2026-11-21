@@ -211,7 +211,8 @@ const getTeacherAssignments = async (req, res, next) => {
     const where = {
       teacherId: effectiveTeacherId,
       ...(academicSessionId && { academicSessionId }),
-      ...(semesterId && { semesterId }),
+      // Session-level assignments (semesterId NULL) apply to every semester
+      ...(semesterId && { OR: [{ semesterId }, { semesterId: null }] }),
       ...(schoolClassId && { schoolClassId }),
       ...(sectionId && { sectionId }),
     };
@@ -589,7 +590,8 @@ const getClassTeacherAssignments = async (req, res, next) => {
     const where = {
       teacherId: effectiveTeacherId,
       ...(academicSessionId && { academicSessionId }),
-      ...(semesterId && { semesterId }),
+      // Session-level assignments (semesterId NULL) apply to every semester
+      ...(semesterId && { OR: [{ semesterId }, { semesterId: null }] }),
       ...(schoolClassId && { schoolClassId }),
       ...(sectionId && { sectionId }),
     };

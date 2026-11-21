@@ -8,6 +8,7 @@ import Card from '../../components/Card';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
 import Modal from '../../components/Modal';
+import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
 export default function ClassTeacherMarksheetPreview() {
   const [assignments, setAssignments] = useState([]);
@@ -30,7 +31,7 @@ export default function ClassTeacherMarksheetPreview() {
   const loadInitialData = async () => {
     try {
       const classAssignments = await teacherAPI.getClassTeacherAssignments();
-      const active = (classAssignments || []).filter((a) => a.isActive);
+      const active = filterVisibleAssignments((classAssignments || []).filter((a) => a.isActive));
       setAssignments(active);
       if (active.length > 0) {
         await selectAssignment(active[0]);
@@ -65,7 +66,7 @@ export default function ClassTeacherMarksheetPreview() {
     setStudents([]);
     try {
       const sems = await academicAPI.getSemesters(assignment.academicSessionId);
-      const semesterList = sems || [];
+      const semesterList = filterVisibleSemesters(sems || []);
       setSemesters(semesterList);
       const semesterId = assignment.semesterId || semesterList[0]?.id || '';
       setSelectedSemesterId(semesterId);

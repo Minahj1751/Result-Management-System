@@ -34,6 +34,7 @@ const NAV_ITEMS = {
     { path: '/teacher/marks', label: 'Marks Entry', icon: '✓' },
     { path: '/class-teacher/attendance', label: 'Attendance', icon: '◷' },
     { path: '/class-teacher/marksheet-preview', label: 'Marksheet Preview', icon: '▧' },
+    { path: '/class-teacher/student-subjects', label: 'Assign Subjects', icon: '☰' },
   ],
 };
 

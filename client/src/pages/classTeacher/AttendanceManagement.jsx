@@ -8,6 +8,7 @@ import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
+import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
 export default function AttendanceManagement() {
   const [myAssignments, setMyAssignments] = useState([]);
@@ -31,7 +32,7 @@ export default function AttendanceManagement() {
         teacherAPI.getClassTeacherAssignments(),
       ]);
       setSessions(sessionsData);
-      const active = assignments.filter((a) => a.isActive);
+      const active = filterVisibleAssignments(assignments.filter((a) => a.isActive));
       setMyAssignments(active);
 
       if (active.length > 0) {
@@ -46,7 +47,7 @@ export default function AttendanceManagement() {
           academicAPI.getSemesters(first.academicSessionId),
           academicAPI.getSections(first.schoolClassId),
         ]);
-        const semesterList = sems || [];
+        const semesterList = filterVisibleSemesters(sems || []);
         const defaultSemesterId = first.semesterId || semesterList[0]?.id || '';
         setSemesters(semesterList);
         setSections(secs);
@@ -98,7 +99,7 @@ export default function AttendanceManagement() {
     const newFilter = { ...filter, [key]: value };
     setFilter(newFilter);
     if (key === 'academicSessionId') {
-      setSemesters(value ? await academicAPI.getSemesters(value) : []);
+      setSemesters(value ? filterVisibleSemesters(await academicAPI.getSemesters(value)) : []);
       setFilter((f) => ({ ...f, semesterId: '' }));
     }
     if (key === 'schoolClassId') {
@@ -196,7 +197,7 @@ export default function AttendanceManagement() {
               <Button onClick={() => {
                 const assignment = myAssignments.find((a) =>
                   a.academicSessionId === filter.academicSessionId &&
-                  a.semesterId === filter.semesterId &&
+                  (!a.semesterId || a.semesterId === filter.semesterId) &&
                   a.schoolClassId === filter.schoolClassId &&
                   a.sectionId === filter.sectionId
                 );
