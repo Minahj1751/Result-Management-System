@@ -38,4 +38,27 @@ export const pdfAPI = {
     });
     downloadBlob(response.data, filename || 'marksheets.zip');
   },
+  getExamReportPreview: async (params) => {
+    const response = await api.get('/pdf/exam-report/student/preview', {
+      params,
+      responseType: 'text',
+    });
+    return response.data;
+  },
+  downloadExamReport: async (params, filename) => {
+    const response = await api.get('/pdf/exam-report/student', {
+      params,
+      responseType: 'blob',
+      timeout: 120000,
+    });
+    downloadBlob(response.data, filename || 'exam_report.pdf');
+  },
+  downloadClassExamReports: async (params, filename) => {
+    const response = await api.get('/pdf/exam-report/class', {
+      params,
+      responseType: 'blob',
+      timeout: 300000,
+    });
+    downloadBlob(response.data, filename || 'exam_reports.zip');
+  },
 };

@@ -96,8 +96,8 @@ export const academicAPI = {
     const response = await api.get('/academic/class-subjects', { params: schoolClassId ? { schoolClassId } : {} });
     return response.data;
   },
-  setClassSubjects: async (schoolClassId, subjectIds) => {
-    const response = await api.put('/academic/class-subjects', { schoolClassId, subjectIds });
+  setClassSubjects: async (schoolClassId, subjectIds, rules) => {
+    const response = await api.put('/academic/class-subjects', { schoolClassId, subjectIds, rules });
     return response.data;
   },
 

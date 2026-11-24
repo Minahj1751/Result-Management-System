@@ -23,6 +23,7 @@ const NAV_ITEMS = {
     { path: '/admin/assessments', label: 'Assessments', icon: '✓' },
     { path: '/admin/results', label: 'Results', icon: '▤' },
     { path: '/admin/pdf', label: 'PDF Generation', icon: '▧' },
+    { path: '/admin/exam-report', label: 'Exam Report', icon: '▦' },
     { path: '/admin/import', label: 'Excel Import', icon: '⇧' },
   ],
   SUBJECT_TEACHER: [
@@ -35,6 +36,7 @@ const NAV_ITEMS = {
     { path: '/class-teacher/attendance', label: 'Attendance', icon: '◷' },
     { path: '/class-teacher/marksheet-preview', label: 'Marksheet Preview', icon: '▧' },
     { path: '/class-teacher/student-subjects', label: 'Assign Subjects', icon: '☰' },
+    { path: '/class-teacher/exam-marks', label: 'Exam Marks', icon: '✎' },
   ],
 };
 

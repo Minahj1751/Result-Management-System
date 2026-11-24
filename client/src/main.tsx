@@ -20,6 +20,8 @@ import MarksEntry from './pages/teacher/MarksEntry';
 import AttendanceManagement from './pages/classTeacher/AttendanceManagement';
 import ClassTeacherMarksheetPreview from './pages/classTeacher/MarksheetPreview';
 import StudentSubjects from './pages/classTeacher/StudentSubjects';
+import ExamMarksEntry from './pages/classTeacher/ExamMarksEntry';
+import ExamReport from './pages/admin/ExamReport';
 import './style.css';
 
 const getStoredUser = () => {
@@ -83,6 +85,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="assessments" element={<AssessmentManagement />} />
           <Route path="results" element={<ResultsManagement />} />
           <Route path="pdf" element={<PDFGeneration />} />
+          <Route path="exam-report" element={<ExamReport />} />
           <Route path="import" element={<ExcelImport />} />
         </Route>
         <Route
@@ -108,6 +111,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="attendance" element={<AttendanceManagement />} />
           <Route path="marksheet-preview" element={<ClassTeacherMarksheetPreview />} />
           <Route path="student-subjects" element={<StudentSubjects />} />
+          <Route path="exam-marks" element={<ExamMarksEntry />} />
         </Route>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />

@@ -72,6 +72,7 @@ model Student {
   attendanceRecords AttendanceRecord[]
   resultSnapshots  ResultSnapshot[]
   studentSubjects  StudentSubject[]
+  studentRemarks   StudentRemark[]
 
   @@map("students")
 }
@@ -94,6 +95,7 @@ model AcademicSession {
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
   studentSubjects      StudentSubject[]
+  studentRemarks       StudentRemark[]
 
   @@map("academic_sessions")
 }
@@ -119,6 +121,7 @@ model Semester {
   assessments          Assessment[]
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
+  studentRemarks       StudentRemark[]
 
   @@unique([name, academicSessionId])
   @@map("semesters")
@@ -141,6 +144,7 @@ model SchoolClass {
   attendanceRecords   AttendanceRecord[]
   resultSnapshots     ResultSnapshot[]
   studentSubjects     StudentSubject[]
+  studentRemarks      StudentRemark[]
 
   @@map("school_classes")
 }
@@ -161,6 +165,7 @@ model Section {
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
   studentSubjects      StudentSubject[]
+  studentRemarks       StudentRemark[]
 
   @@unique([name, schoolClassId])
   @@map("sections")
@@ -191,12 +196,43 @@ model ClassSubject {
   schoolClass   SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
   subjectId     String
   subject       Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  createdAt     DateTime    @default(now())
+  // Continuous-assessment rule for CW/HW:
+  // BEST2_AVG = best 2 of N, marks summed and divided by 2 (rounded)
+  // BEST1     = best 1 of N
+  assessmentRule String    @default("BEST2_AVG")
+  createdAt     DateTime   @default(now())
 
   @@unique([schoolClassId, subjectId])
   @@index([schoolClassId])
   @@index([subjectId])
   @@map("class_subjects")
+}
+
+// Class teacher remarks for a student, per semester
+model StudentRemark {
+  id                String          @id @default(cuid())
+  studentId         String
+  student           Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  semesterId        String
+  semester          Semester        @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  schoolClassId     String
+  schoolClass       SchoolClass     @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  sectionId         String
+  section           Section         @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  remarks           String          @db.Text
+  updatedById       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([studentId, academicSessionId, semesterId, schoolClassId, sectionId], name: "studentId_academicSessionId_semesterId_schoolClassId_sectionId_remark")
+  @@index([studentId])
+  @@index([academicSessionId])
+  @@index([semesterId])
+  @@index([schoolClassId])
+  @@index([sectionId])
+  @@map("student_remarks")
 }
 
 // Per-student subject selection (session-wise). When a student has rows here,

@@ -1,8 +1,12 @@
 const prisma = require('../config/database');
+const { getCategoryKind } = require('../services/semesterResultService');
 
 /**
- * Ensure the requesting teacher is assigned to the assessment's
- * session/semester/class/section/subject. Throws an http-error on failure.
+ * Ensure the requesting teacher may enter marks for the assessment.
+ * Term-exam style assessments (category kind EXAM) may be entered by the
+ * class teacher assigned to the assessment's class/section; all other
+ * assessments require a subject-teacher assignment.
+ * Throws an http-error on failure.
  */
 const assertTeacherAssignedToAssessment = async (req, assessment) => {
   const profile = req.user.teacherProfile;
@@ -10,6 +14,26 @@ const assertTeacherAssignedToAssessment = async (req, assessment) => {
     const error = new Error('Teacher profile not found');
     error.statusCode = 403;
     throw error;
+  }
+
+  if (getCategoryKind(assessment.category) === 'EXAM') {
+    const classAssignment = await prisma.classTeacherAssignment.findFirst({
+      where: {
+        teacherId: profile.id,
+        academicSessionId: assessment.academicSessionId,
+        OR: [{ semesterId: assessment.semesterId }, { semesterId: null }],
+        schoolClassId: assessment.schoolClassId,
+        sectionId: assessment.sectionId,
+        isActive: true,
+      },
+    });
+
+    if (classAssignment) {
+      return profile;
+    }
+
+    // Fall through to subject-teacher check as well (a subject teacher
+    // explicitly assigned may also enter exam marks)
   }
 
   const assignment = await prisma.teacherAssignment.findFirst({
@@ -171,6 +195,7 @@ const upsertMarksEntry = async (req, res, next) => {
     // Get assessment to validate maximum marks
     const assessment = await prisma.assessment.findUnique({
       where: { id: assessmentId },
+      include: { category: true },
     });
 
     if (!assessment) {
@@ -259,6 +284,7 @@ const bulkUpsertMarks = async (req, res, next) => {
         if (assessment === undefined) {
           const found = await prisma.assessment.findUnique({
             where: { id: assessmentId },
+            include: { category: true },
           });
           if (found) {
             await assertTeacherAssignedToAssessment(req, found);
@@ -340,7 +366,7 @@ const deleteMarksEntry = async (req, res, next) => {
 
     const existing = await prisma.marksEntry.findUnique({
       where: { id },
-      include: { assessment: true },
+      include: { assessment: { include: { category: true } } },
     });
 
     if (!existing) {

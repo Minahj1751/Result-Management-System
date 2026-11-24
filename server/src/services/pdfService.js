@@ -6,7 +6,7 @@ const { ZipArchive } = require('archiver');
 /**
  * Generate PDF from HTML template
  */
-const generatePDF = async (html, outputPath) => {
+const generatePDF = async (html, outputPath, options = {}) => {
   let browser;
   try {
     browser = await puppeteer.launch({
@@ -21,7 +21,7 @@ const generatePDF = async (html, outputPath) => {
     await page.pdf({
       path: outputPath,
       format: 'A4',
-      landscape: true,
+      landscape: options.landscape !== false,
       printBackground: true,
       margin: {
         top: '10mm',
@@ -259,6 +259,176 @@ const generateStudentMarksheetPDF = async (data, outputPath) => {
 };
 
 /**
+ * Generate Semester Examination Report HTML
+ * data: { student, enrollment, schoolSettings, semester, subjectResults,
+ *         summary, highestBySubject, remark, classTeacherName, gradingPolicy }
+ */
+const generateExamReportHTML = async (data) => {
+  const {
+    student,
+    enrollment,
+    schoolSettings,
+    semester,
+    subjectResults = [],
+    summary = {},
+    highestBySubject = {},
+    remark = '',
+    classTeacherName = '',
+    gradingPolicy = null,
+  } = data;
+
+  const precision = schoolSettings?.decimalPrecision ?? 2;
+  const fmt = (v) => (v === null || v === undefined ? 'N/A' : Number(v).toFixed(precision));
+
+  const subjectRows = subjectResults.map(({ subject, result }) => {
+    const highest = highestBySubject[subject.id];
+    const highestDisplay = highest !== null && highest !== undefined
+      ? fmt(highest)
+      : 'N/A';
+    return `
+      <tr>
+        <td class="subject-name">${subject.name}</td>
+        <td class="mark-value">${fmt(result.classMarks)} / 40</td>
+        <td class="mark-value">${fmt(result.examMarks)} / 60</td>
+        <td class="total-cell">${fmt(result.percentage)}%</td>
+        <td class="total-cell">${result.grade || '-'}</td>
+        <td class="mark-value">${highestDisplay}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const gradedCount = subjectResults.length;
+  const summaryRow = gradedCount > 0 ? `
+    <tr class="summary-row">
+      <td class="subject-name">Total</td>
+      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.classMarks || 0), 0))} / 40</td>
+      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.examMarks || 0), 0))} / 60</td>
+      <td>${fmt(summary.percentage)}%</td>
+      <td>${summary.overallGrade || '-'}</td>
+      <td>-</td>
+    </tr>
+  ` : '';
+
+  let gradingTable = '';
+  if (gradingPolicy && gradingPolicy.gradeScales && gradingPolicy.gradeScales.length > 0) {
+    const scaleRows = gradingPolicy.gradeScales
+      .slice()
+      .sort((a, b) => parseFloat(b.minPercentage) - parseFloat(a.minPercentage))
+      .map((scale) => `
+        <tr>
+          <td>${scale.grade}</td>
+          <td>${formatMark(scale.minPercentage, 0)}% - ${formatMark(scale.maxPercentage, 0)}%</td>
+          <td>${scale.gradePoint !== null && scale.gradePoint !== undefined ? Number(scale.gradePoint).toFixed(2) : '-'}</td>
+        </tr>
+      `).join('');
+    gradingTable = `
+      <section>
+        <div class="section-title">Grading Scale</div>
+        <table class="grading-table">
+          <thead>
+            <tr><th>Grade</th><th>Percentage Range</th><th>Grade Point</th></tr>
+          </thead>
+          <tbody>${scaleRows}</tbody>
+        </table>
+      </section>
+    `;
+  }
+
+  const resultStatus = summary.resultStatus || 'N/A';
+  const resultClass = resultStatus === 'PASS' ? 'pass' : resultStatus === 'FAIL' ? 'fail' : '';
+
+  const logoPath = path.join(__dirname, '../templates/marksheet/logo.jpg');
+  const logoDataUri = `data:image/jpeg;base64,${(await fs.readFile(logoPath)).toString('base64')}`;
+
+  let html = await fs.readFile(
+    path.join(__dirname, '../templates/examreport/template.html'),
+    'utf-8'
+  );
+
+  const replacements = {
+    '{{LOGO_SRC}}': logoDataUri,
+    '{{SCHOOL_NAME}}': schoolSettings?.schoolName || 'The New School Dhaka',
+    '{{ACADEMIC_SESSION}}': enrollment?.academicSession?.name || '',
+    '{{SEMESTER}}': semester?.name || enrollment?.semester?.name || '',
+    '{{STUDENT_NAME}}': student?.fullName || '',
+    '{{STUDENT_ID}}': student?.studentId || '',
+    '{{CLASS}}': enrollment?.schoolClass?.name || '',
+    '{{SECTION}}': enrollment?.section?.name || '',
+    '{{ROLL_NUMBER}}': enrollment?.rollNumber ?? '',
+    '{{REPORT_DATE}}': formatReportDate(schoolSettings?.dateFormat),
+    '{{CLASS_TEACHER_NAME}}': classTeacherName || schoolSettings?.classTeacherSignature || 'Class Teacher',
+    '{{SUBJECT_ROWS}}': subjectRows,
+    '{{SUMMARY_ROW}}': summaryRow,
+    '{{TOTAL_MARKS}}': fmt(summary.totalMarks),
+    '{{AVERAGE_PERCENTAGE}}': fmt(summary.percentage),
+    '{{GPA}}': summary.gpa !== null && summary.gpa !== undefined ? Number(summary.gpa).toFixed(2) : 'N/A',
+    '{{OVERALL_GRADE}}': summary.overallGrade || '-',
+    '{{RESULT_STATUS}}': resultStatus,
+    '{{RESULT_CLASS}}': resultClass,
+    '{{GRADING_TABLE}}': gradingTable,
+    '{{REMARKS}}': remark || 'N/A',
+    '{{PRINCIPAL_SIGNATURE}}': schoolSettings?.principalSignature || 'Principal',
+  };
+
+  Object.entries(replacements).forEach(([key, value]) => {
+    html = html.split(key).join(String(value));
+  });
+
+  return html;
+};
+
+/**
+ * Generate individual student Semester Examination Report PDF (portrait)
+ */
+const generateStudentExamReportPDF = async (data, outputPath) => {
+  const html = await generateExamReportHTML(data);
+  return await generatePDF(html, outputPath, { landscape: false });
+};
+
+/**
+ * Generate ZIP archive of exam reports for entire class
+ */
+const generateClassExamReportsZIP = async (studentsData, outputPath) => {
+  const output = require('fs').createWriteStream(outputPath);
+  const archive = new ZipArchive({ zlib: { level: 9 } });
+
+  return new Promise(async (resolve, reject) => {
+    output.on('close', () => {
+      resolve(outputPath);
+    });
+
+    archive.on('error', (err) => {
+      reject(err);
+    });
+
+    archive.pipe(output);
+
+    for (const studentData of studentsData) {
+      try {
+        const html = await generateExamReportHTML(studentData);
+        const pdfPath = path.join(
+          path.dirname(outputPath),
+          `temp_exam_${studentData.student.studentId}.pdf`
+        );
+
+        await generatePDF(html, pdfPath, { landscape: false });
+
+        const pdfBuffer = await fs.readFile(pdfPath);
+        archive.append(pdfBuffer, {
+          name: `${studentData.student.studentId}_${studentData.student.fullName.replace(/\s+/g, '_')}_exam_report.pdf`,
+        });
+
+        await fs.unlink(pdfPath);
+      } catch (error) {
+        console.error('Error generating exam report PDF for student:', studentData.student?.studentId, error);
+      }
+    }
+
+    archive.finalize();
+  });
+};
+
+/**
  * Generate ZIP archive of marksheets for entire class
  */
 const generateClassMarksheetsZIP = async (studentsData, outputPath) => {
@@ -307,4 +477,7 @@ module.exports = {
   generateMarksheetHTML,
   generateStudentMarksheetPDF,
   generateClassMarksheetsZIP,
+  generateExamReportHTML,
+  generateStudentExamReportPDF,
+  generateClassExamReportsZIP,
 };

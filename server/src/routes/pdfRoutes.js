@@ -11,4 +11,9 @@ router.get('/student/missing-marks', authenticate, isAdminOrClassTeacher, pdfCon
 router.get('/student', authenticate, isAdmin, pdfController.generateStudentMarksheet);
 router.get('/class', authenticate, isAdmin, pdfController.generateClassMarksheets);
 
+// Semester Examination Report (admin only)
+router.get('/exam-report/student/preview', authenticate, isAdmin, pdfController.previewStudentExamReport);
+router.get('/exam-report/student', authenticate, isAdmin, pdfController.generateStudentExamReport);
+router.get('/exam-report/class', authenticate, isAdmin, pdfController.generateClassExamReports);
+
 module.exports = router;

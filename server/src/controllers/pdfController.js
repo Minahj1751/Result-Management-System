@@ -1,5 +1,6 @@
 const pdfService = require('../services/pdfService');
 const resultCalculationService = require('../services/resultCalculationService');
+const semesterResultService = require('../services/semesterResultService');
 const prisma = require('../config/database');
 const path = require('path');
 const fs = require('fs').promises;
@@ -348,9 +349,208 @@ const generateClassMarksheets = async (req, res, next) => {
   }
 };
 
+/**
+ * Shared context for Semester Examination Report generation.
+ * Computes section-wide results once so "Highest Marks Obtained" is
+ * consistent across every student's report card.
+ */
+const getExamReportContext = async ({ academicSessionId, semesterId, schoolClassId, sectionId }) => {
+  const [schoolSettings, semester, gradingPolicy, sectionData, classTeacherAssignment] = await Promise.all([
+    prisma.schoolSettings.findFirst(),
+    prisma.semester.findUnique({ where: { id: semesterId }, select: { name: true } }),
+    prisma.gradingPolicy.findFirst({
+      where: { isActive: true },
+      include: { gradeScales: { orderBy: { minPercentage: 'desc' } } },
+    }),
+    semesterResultService.calculateSectionSemesterResults(academicSessionId, semesterId, schoolClassId, sectionId),
+    prisma.classTeacherAssignment.findFirst({
+      where: {
+        academicSessionId,
+        schoolClassId,
+        sectionId,
+        isActive: true,
+        OR: [{ semesterId }, { semesterId: null }],
+      },
+      include: { teacher: true },
+      orderBy: { semesterId: 'desc' },
+    }),
+  ]);
+
+  const highestBySubject = {};
+  sectionData.highestBySubject.forEach((value, key) => {
+    highestBySubject[key] = value;
+  });
+
+  return {
+    schoolSettings,
+    semester,
+    gradingPolicy,
+    sectionData,
+    highestBySubject,
+    classTeacherName: classTeacherAssignment?.teacher?.fullName || '',
+  };
+};
+
+const buildExamReportData = async (ctx, studentEntry) => {
+  const { studentId, academicSessionId, semesterId, schoolClassId, sectionId } = studentEntry._keys;
+
+  const [remark, summary] = await Promise.all([
+    prisma.studentRemark.findUnique({
+      where: {
+        studentId_academicSessionId_semesterId_schoolClassId_sectionId_remark: {
+          studentId,
+          academicSessionId,
+          semesterId,
+          schoolClassId,
+          sectionId,
+        },
+      },
+    }),
+    semesterResultService.computeSemesterSummary(studentEntry.subjectResults),
+  ]);
+
+  return {
+    student: studentEntry.student,
+    enrollment: studentEntry.enrollment,
+    schoolSettings: ctx.schoolSettings,
+    semester: ctx.semester,
+    subjectResults: studentEntry.subjectResults,
+    summary,
+    highestBySubject: ctx.highestBySubject,
+    remark: remark?.remarks || '',
+    classTeacherName: ctx.classTeacherName,
+    gradingPolicy: ctx.gradingPolicy,
+  };
+};
+
+const findStudentEntry = (ctx, studentId) =>
+  ctx.sectionData.students.find((s) => s.student.id === studentId);
+
+/**
+ * Preview individual student exam report HTML
+ */
+const previewStudentExamReport = async (req, res, next) => {
+  try {
+    const { studentId, academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+    if (!studentId || !academicSessionId || !semesterId || !schoolClassId || !sectionId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const ctx = await getExamReportContext({ academicSessionId, semesterId, schoolClassId, sectionId });
+    const entry = findStudentEntry(ctx, studentId);
+    if (!entry) {
+      return res.status(404).json({ error: 'Student not found in this class/section' });
+    }
+
+    const data = await buildExamReportData(ctx, {
+      ...entry,
+      _keys: { studentId, academicSessionId, semesterId, schoolClassId, sectionId },
+    });
+
+    const html = await pdfService.generateExamReportHTML(data);
+    res.type('html').send(html);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Generate individual student exam report PDF
+ */
+const generateStudentExamReport = async (req, res, next) => {
+  try {
+    const { studentId, academicSessionId, semesterId, schoolClassId, sectionId } = req.query;
+    if (!studentId || !academicSessionId || !semesterId || !schoolClassId || !sectionId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const ctx = await getExamReportContext({ academicSessionId, semesterId, schoolClassId, sectionId });
+    const entry = findStudentEntry(ctx, studentId);
+    if (!entry) {
+      return res.status(404).json({ error: 'Student not found in this class/section' });
+    }
+
+    const data = await buildExamReportData(ctx, {
+      ...entry,
+      _keys: { studentId, academicSessionId, semesterId, schoolClassId, sectionId },
+    });
+
+    const outputDir = path.join(__dirname, '../../temp');
+    await fs.mkdir(outputDir, { recursive: true });
+    const outputPath = path.join(outputDir, `exam_report_${studentId}_${Date.now()}.pdf`);
+
+    await pdfService.generateStudentExamReportPDF(data, outputPath);
+
+    res.download(outputPath, `exam_report_${data.student?.studentId || studentId}.pdf`, async (err) => {
+      if (err) {
+        console.error('Error sending file:', err);
+      }
+      try {
+        await fs.unlink(outputPath);
+      } catch (cleanupError) {
+        console.error('Error cleaning up file:', cleanupError);
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Generate class exam reports ZIP
+ */
+const generateClassExamReports = async (req, res, next) => {
+  try {
+    const { academicSessionId, semesterId, schoolClassId, sectionId, studentIds } = req.query;
+    if (!academicSessionId || !semesterId || !schoolClassId || !sectionId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    const selectedIds = studentIds
+      ? String(studentIds).split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
+
+    const ctx = await getExamReportContext({ academicSessionId, semesterId, schoolClassId, sectionId });
+
+    const keys = { academicSessionId, semesterId, schoolClassId, sectionId };
+    const studentsData = [];
+    for (const entry of ctx.sectionData.students) {
+      if (selectedIds && !selectedIds.includes(entry.student.id)) continue;
+      const data = await buildExamReportData(ctx, { ...entry, _keys: { ...keys, studentId: entry.student.id } });
+      studentsData.push(data);
+    }
+
+    if (studentsData.length === 0) {
+      return res.status(404).json({ error: 'No students found for exam report' });
+    }
+
+    const outputDir = path.join(__dirname, '../../temp');
+    await fs.mkdir(outputDir, { recursive: true });
+    const outputPath = path.join(outputDir, `exam_reports_${schoolClassId}_${sectionId}_${Date.now()}.zip`);
+
+    await pdfService.generateClassExamReportsZIP(studentsData, outputPath);
+
+    res.download(outputPath, `exam_reports_${schoolClassId}_${sectionId}.zip`, async (err) => {
+      if (err) {
+        console.error('Error sending file:', err);
+      }
+      try {
+        await fs.unlink(outputPath);
+      } catch (cleanupError) {
+        console.error('Error cleaning up file:', cleanupError);
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   generateStudentMarksheet,
   previewStudentMarksheet,
   getStudentMissingMarks,
   generateClassMarksheets,
+  previewStudentExamReport,
+  generateStudentExamReport,
+  generateClassExamReports,
 };

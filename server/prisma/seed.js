@@ -188,6 +188,17 @@ async function main() {
     },
   });
 
+  const termExamCategory = await prisma.assessmentCategory.upsert({
+    where: { code: 'TERM_EXAM' },
+    update: {},
+    create: {
+      name: 'Term Exam',
+      code: 'TERM_EXAM',
+      weightage: 60.0,
+      description: 'Term examination (converted to 60%)',
+    },
+  });
+
   console.log('Created assessment categories');
 
   // Create teachers

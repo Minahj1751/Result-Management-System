@@ -440,7 +440,7 @@ const getClassSubjects = async (req, res, next) => {
  */
 const setClassSubjects = async (req, res, next) => {
   try {
-    const { schoolClassId, subjectIds } = req.body;
+    const { schoolClassId, subjectIds, rules } = req.body;
 
     if (!schoolClassId) {
       return res.status(400).json({ error: 'schoolClassId is required' });
@@ -461,10 +461,16 @@ const setClassSubjects = async (req, res, next) => {
     const validIds = new Set(subjects.map((s) => s.id));
     const uniqueIds = [...new Set(subjectIds)].filter((id) => validIds.has(id));
 
+    // Optional per-subject CW/HW assessment rule: BEST2_AVG | BEST1
+    const ruleFor = (subjectId) => {
+      const rule = rules && typeof rules === 'object' ? rules[subjectId] : null;
+      return rule === 'BEST1' || rule === 'BEST2_AVG' ? rule : 'BEST2_AVG';
+    };
+
     await prisma.$transaction([
       prisma.classSubject.deleteMany({ where: { schoolClassId } }),
       prisma.classSubject.createMany({
-        data: uniqueIds.map((subjectId) => ({ schoolClassId, subjectId })),
+        data: uniqueIds.map((subjectId) => ({ schoolClassId, subjectId, assessmentRule: ruleFor(subjectId) })),
         skipDuplicates: true,
       }),
     ]);
