@@ -173,6 +173,61 @@ const gradeFor = (percentage, gradingPolicy) => {
 const calculateStudentSubjectSemesterResult = async (
   studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId
 ) => {
+  // Direct Term Exam entry takes precedence over assessment-based marks.
+  // CT (20) + CW (10) + HW (10) = Class Marks (40); Term Exam (60) = Exam Marks.
+  const directMark = await prisma.termExamMark.findUnique({
+    where: {
+      termExamMark_unique: {
+        studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId,
+      },
+    },
+  });
+
+  if (directMark) {
+    const toN = (v) => (v === null || v === undefined ? 0 : parseFloat(v));
+    const classTestMarks = toN(directMark.classTestMarks);
+    const classWorkMarks = toN(directMark.classWorkMarks);
+    const homeWorkMarks = toN(directMark.homeWorkMarks);
+    const examMarks = toN(directMark.termExamMarks);
+
+    const classMarks = round2(classTestMarks + classWorkMarks + homeWorkMarks); // out of 40
+    const totalMarks = round2(classMarks + examMarks); // out of 100
+    const percentage = round2(totalMarks);
+
+    const gradingPolicy = await getGradingPolicy();
+    const { grade, gradePoint } = gradeFor(percentage, gradingPolicy);
+
+    const part = (marks, max) => ({
+      percentage: max > 0 ? round2((marks / max) * 100) : null,
+      marks,
+      used: 1,
+      selected: [],
+    });
+
+    return {
+      studentId,
+      academicSessionId,
+      semesterId,
+      schoolClassId,
+      sectionId,
+      subjectId,
+      assessmentRule: null,
+      directEntry: true,
+      breakdown: {
+        classTest: part(classTestMarks, 20),
+        classWork: part(classWorkMarks, 10),
+        homeWork: part(homeWorkMarks, 10),
+        exam: part(examMarks, 60),
+      },
+      classMarks,
+      examMarks,
+      totalMarks,
+      percentage,
+      grade,
+      gradePoint,
+    };
+  }
+
   const assessments = await prisma.assessment.findMany({
     where: { academicSessionId, semesterId, schoolClassId, sectionId, subjectId },
     include: { category: true, marksEntries: true },
@@ -259,6 +314,19 @@ const getStudentSubjects = async (studentId, academicSessionId, semesterId, scho
         subjects.push(a.subject);
       }
     });
+  }
+
+  // Include subjects that only have direct Term Exam marks
+  const termExamSubjectRows = await prisma.termExamMark.findMany({
+    where: { academicSessionId, semesterId, schoolClassId, sectionId },
+    select: { subjectId: true },
+    distinct: ['subjectId'],
+  });
+  const knownIds = new Set(subjects.map((s) => s.id));
+  const extraIds = termExamSubjectRows.map((r) => r.subjectId).filter((id) => !knownIds.has(id));
+  if (extraIds.length > 0) {
+    const extraSubjects = await prisma.subject.findMany({ where: { id: { in: extraIds } } });
+    subjects.push(...extraSubjects);
   }
 
   subjects.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name));

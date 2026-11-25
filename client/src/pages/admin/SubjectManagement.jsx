@@ -317,33 +317,6 @@ export default function SubjectManagement() {
                 </div>
                 <p className="text-xs text-gray-500 mt-1">{selectedSubjectIds.length} subject(s) selected</p>
               </div>
-              {selectedSubjectIds.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">CW/HW Assessment Rule (per subject)</label>
-                  <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100">
-                    {selectedSubjectIds.map((subjectId) => {
-                      const subject = subjects.find((s) => s.id === subjectId);
-                      return (
-                        <div key={subjectId} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                          <span className="text-gray-700">{subject?.name || subjectId}</span>
-                          <Select
-                            value={subjectRules[subjectId] || 'BEST2_AVG'}
-                            onChange={(e) => setSubjectRules((prev) => ({ ...prev, [subjectId]: e.target.value }))}
-                            options={[
-                              { value: 'BEST2_AVG', label: 'Best 2 of N ÷ 2 (rounded)' },
-                              { value: 'BEST1', label: 'Best 1 of N' },
-                            ]}
-                            className="w-52"
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Applies to Class Work and Homework marks in the semester examination result.
-                  </p>
-                </div>
-              )}
               <div className="flex justify-end gap-2">
                 <Button variant="secondary" onClick={() => setIsClassSubjectOpen(false)}>Cancel</Button>
                 <Button onClick={handleSaveClassSubjects} disabled={selectedSubjectIds.length === 0}>Save</Button>

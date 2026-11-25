@@ -29,6 +29,7 @@ const NAV_ITEMS = {
   SUBJECT_TEACHER: [
     { path: '/teacher/dashboard', label: 'Dashboard', icon: '⌂' },
     { path: '/teacher/marks', label: 'Marks Entry', icon: '✓' },
+    { path: '/teacher/term-exam', label: 'Term Exam', icon: '✎' },
   ],
   CLASS_TEACHER: [
     { path: '/class-teacher/dashboard', label: 'Dashboard', icon: '⌂' },

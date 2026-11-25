@@ -17,6 +17,7 @@ import ResultsManagement from './pages/admin/ResultsManagement';
 import PDFGeneration from './pages/admin/PDFGeneration';
 import ExcelImport from './pages/admin/ExcelImport';
 import MarksEntry from './pages/teacher/MarksEntry';
+import TermExamEntry from './pages/teacher/TermExamEntry';
 import AttendanceManagement from './pages/classTeacher/AttendanceManagement';
 import ClassTeacherMarksheetPreview from './pages/classTeacher/MarksheetPreview';
 import StudentSubjects from './pages/classTeacher/StudentSubjects';
@@ -98,6 +99,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         >
           <Route path="dashboard" element={<TeacherDashboard />} />
           <Route path="marks" element={<MarksEntry />} />
+          <Route path="term-exam" element={<TermExamEntry />} />
         </Route>
         <Route
           path="/class-teacher/*"

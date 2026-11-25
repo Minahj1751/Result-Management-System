@@ -48,6 +48,7 @@ model TeacherProfile {
   subjectAssignments      TeacherAssignment[]
   classTeacherAssignments ClassTeacherAssignment[]
   marksEntries             MarksEntry[]
+  termExamMarks            TermExamMark[]
   attendanceRecords        AttendanceRecord[]
   auditLogs                AuditLog[]
 
@@ -69,6 +70,7 @@ model Student {
 
   enrollments      StudentEnrollment[]
   marksEntries     MarksEntry[]
+  termExamMarks    TermExamMark[]
   attendanceRecords AttendanceRecord[]
   resultSnapshots  ResultSnapshot[]
   studentSubjects  StudentSubject[]
@@ -96,6 +98,7 @@ model AcademicSession {
   resultSnapshots      ResultSnapshot[]
   studentSubjects      StudentSubject[]
   studentRemarks       StudentRemark[]
+  termExamMarks        TermExamMark[]
 
   @@map("academic_sessions")
 }
@@ -122,6 +125,7 @@ model Semester {
   attendanceRecords    AttendanceRecord[]
   resultSnapshots      ResultSnapshot[]
   studentRemarks       StudentRemark[]
+  termExamMarks        TermExamMark[]
 
   @@unique([name, academicSessionId])
   @@map("semesters")
@@ -145,6 +149,7 @@ model SchoolClass {
   resultSnapshots     ResultSnapshot[]
   studentSubjects     StudentSubject[]
   studentRemarks      StudentRemark[]
+  termExamMarks       TermExamMark[]
 
   @@map("school_classes")
 }
@@ -166,6 +171,7 @@ model Section {
   resultSnapshots      ResultSnapshot[]
   studentSubjects      StudentSubject[]
   studentRemarks       StudentRemark[]
+  termExamMarks        TermExamMark[]
 
   @@unique([name, schoolClassId])
   @@map("sections")
@@ -185,6 +191,7 @@ model Subject {
   resultSnapshots    ResultSnapshot[]
   classSubjects      ClassSubject[]
   studentSubjects    StudentSubject[]
+  termExamMarks      TermExamMark[]
 
   @@map("subjects")
 }
@@ -440,6 +447,44 @@ enum MarkStatus {
   ABSENT
   EXEMPTED
   NOT_APPLICABLE
+}
+
+// Direct term-exam component marks entered by subject teachers in the
+// Term Exam module: CT (out of 20) + CW (out of 10) + HW (out of 10)
+// form Class Marks (out of 40); Term Exam (out of 60) is Exam Marks.
+// When a row exists for a student+subject it takes precedence over the
+// assessment-based semester calculation.
+model TermExamMark {
+  id                String   @id @default(cuid())
+  studentId         String
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicSessionId String
+  academicSession   AcademicSession @relation(fields: [academicSessionId], references: [id], onDelete: Cascade)
+  semesterId        String
+  semester          Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  schoolClassId     String
+  schoolClass       SchoolClass @relation(fields: [schoolClassId], references: [id], onDelete: Cascade)
+  sectionId         String
+  section           Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId         String
+  subject           Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  classTestMarks    Decimal? @db.Decimal(5, 2)
+  classWorkMarks    Decimal? @db.Decimal(5, 2)
+  homeWorkMarks     Decimal? @db.Decimal(5, 2)
+  termExamMarks     Decimal? @db.Decimal(5, 2)
+  enteredById       String?
+  enteredBy         TeacherProfile? @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId], name: "termExamMark_unique")
+  @@index([academicSessionId])
+  @@index([semesterId])
+  @@index([schoolClassId])
+  @@index([sectionId])
+  @@index([subjectId])
+  @@index([enteredById])
+  @@map("term_exam_marks")
 }
 
 // Attendance record

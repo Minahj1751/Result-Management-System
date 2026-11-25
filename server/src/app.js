@@ -16,6 +16,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const resultRoutes = require('./routes/resultRoutes');
 const pdfRoutes = require('./routes/pdfRoutes');
 const remarkRoutes = require('./routes/remarkRoutes');
+const termExamRoutes = require('./routes/termExamRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const exportRoutes = require('./routes/exportRoutes');
 
@@ -56,6 +57,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/pdf', pdfRoutes);
 app.use('/api/remarks', remarkRoutes);
+app.use('/api/term-exam', termExamRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/export', exportRoutes);
 

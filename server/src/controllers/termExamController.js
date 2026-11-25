@@ -1,0 +1,245 @@
+const prisma = require('../config/database');
+
+/**
+ * Term Exam module: subject teachers enter the four report-card
+ * components directly per student — CT (out of 20), CW (out of 10),
+ * HW (out of 10) which sum to Class Marks (out of 40), and Term Exam
+ * (out of 60). When a row exists it takes precedence over the
+ * assessment-based semester result calculation.
+ */
+const TERM_EXAM_MAX_MARKS = {
+  classTestMarks: 20,
+  classWorkMarks: 10,
+  homeWorkMarks: 10,
+  termExamMarks: 60,
+};
+
+const MARK_FIELDS = Object.keys(TERM_EXAM_MAX_MARKS);
+
+const scopeFromQuery = (q) => ({
+  academicSessionId: q.academicSessionId,
+  semesterId: q.semesterId,
+  schoolClassId: q.schoolClassId,
+  sectionId: q.sectionId,
+  subjectId: q.subjectId,
+});
+
+const missingScope = (scope) =>
+  Object.entries({
+    academicSessionId: scope.academicSessionId,
+    semesterId: scope.semesterId,
+    schoolClassId: scope.schoolClassId,
+    sectionId: scope.sectionId,
+    subjectId: scope.subjectId,
+  }).filter(([, v]) => !v).map(([k]) => k);
+
+/**
+ * Ensure the requesting teacher is assigned to this class/section/subject.
+ * Admins bypass the check.
+ */
+const assertTeacherAssignedToScope = async (req, scope) => {
+  if (req.user.role === 'ADMIN') return;
+
+  const profile = req.user.teacherProfile;
+  if (!profile) {
+    const error = new Error('Teacher profile not found');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const assignment = await prisma.teacherAssignment.findFirst({
+    where: {
+      teacherId: profile.id,
+      subjectId: scope.subjectId,
+      academicSessionId: scope.academicSessionId,
+      OR: [{ semesterId: scope.semesterId }, { semesterId: null }],
+      schoolClassId: scope.schoolClassId,
+      sectionId: scope.sectionId,
+      isActive: true,
+    },
+  });
+
+  if (!assignment) {
+    const error = new Error('You are not assigned to this class and subject');
+    error.statusCode = 403;
+    throw error;
+  }
+};
+
+const parseMark = (value, field) => {
+  if (value === null || value === undefined || value === '') return null;
+  const n = parseFloat(value);
+  if (!Number.isFinite(n) || n < 0) return { error: `${field} must be a number >= 0` };
+  if (n > TERM_EXAM_MAX_MARKS[field]) {
+    return { error: `${field} cannot exceed ${TERM_EXAM_MAX_MARKS[field]}` };
+  }
+  return { value: n };
+};
+
+/**
+ * Get the student roster for a scope plus any saved Term Exam marks.
+ */
+const getTermExamMarks = async (req, res, next) => {
+  try {
+    const scope = scopeFromQuery(req.query);
+    const missing = missingScope(scope);
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Missing required parameters: ${missing.join(', ')}` });
+    }
+
+    await assertTeacherAssignedToScope(req, scope);
+
+    const enrollments = await prisma.studentEnrollment.findMany({
+      where: {
+        academicSessionId: scope.academicSessionId,
+        schoolClassId: scope.schoolClassId,
+        sectionId: scope.sectionId,
+        isActive: true,
+        OR: [{ semesterId: scope.semesterId }, { semesterId: null }],
+      },
+      include: { student: true },
+    });
+
+    const enrollmentByStudent = new Map();
+    enrollments
+      .sort((a, b) => (a.semesterId ? 0 : 1) - (b.semesterId ? 0 : 1))
+      .forEach((e) => {
+        if (!enrollmentByStudent.has(e.studentId)) enrollmentByStudent.set(e.studentId, e);
+      });
+    const roster = [...enrollmentByStudent.values()].sort(
+      (a, b) => (a.rollNumber ?? 999999) - (b.rollNumber ?? 999999)
+    );
+
+    const marksRows = await prisma.termExamMark.findMany({
+      where: {
+        academicSessionId: scope.academicSessionId,
+        semesterId: scope.semesterId,
+        schoolClassId: scope.schoolClassId,
+        sectionId: scope.sectionId,
+        subjectId: scope.subjectId,
+      },
+    });
+    const marksMap = new Map(marksRows.map((m) => [m.studentId, m]));
+
+    const students = roster.map((enrollment) => ({
+      student: enrollment.student,
+      enrollment,
+      marks: marksMap.get(enrollment.studentId) || null,
+    }));
+
+    res.json({ scope, maxMarks: TERM_EXAM_MAX_MARKS, students });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bulk upsert Term Exam marks for a scope.
+ */
+const bulkUpsertTermExamMarks = async (req, res, next) => {
+  try {
+    const { entries } = req.body;
+    const scope = {
+      academicSessionId: req.body.academicSessionId,
+      semesterId: req.body.semesterId,
+      schoolClassId: req.body.schoolClassId,
+      sectionId: req.body.sectionId,
+      subjectId: req.body.subjectId,
+    };
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: 'Entries array is required' });
+    }
+    const missing = missingScope(scope);
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Missing required parameters: ${missing.join(', ')}` });
+    }
+
+    await assertTeacherAssignedToScope(req, scope);
+
+    const teacherProfile = req.user.teacherProfile;
+    const results = [];
+    const errors = [];
+
+    for (const entry of entries) {
+      const { studentId } = entry;
+      if (!studentId) {
+        errors.push({ entry, error: 'studentId is required' });
+        continue;
+      }
+
+      const parsed = {};
+      let entryError = null;
+      for (const field of MARK_FIELDS) {
+        const r = parseMark(entry[field], field);
+        if (r.error) { entryError = r.error; break; }
+        parsed[field] = r.value;
+      }
+      if (entryError) {
+        errors.push({ entry, error: entryError });
+        continue;
+      }
+
+      // Student must be enrolled in this scope
+      const enrollment = await prisma.studentEnrollment.findFirst({
+        where: {
+          studentId,
+          academicSessionId: scope.academicSessionId,
+          schoolClassId: scope.schoolClassId,
+          sectionId: scope.sectionId,
+          isActive: true,
+          OR: [{ semesterId: scope.semesterId }, { semesterId: null }],
+        },
+        select: { id: true },
+      });
+      if (!enrollment) {
+        errors.push({ entry, error: 'Student is not enrolled in this class/section' });
+        continue;
+      }
+
+      const where = {
+        termExamMark_unique: {
+          studentId,
+          academicSessionId: scope.academicSessionId,
+          semesterId: scope.semesterId,
+          schoolClassId: scope.schoolClassId,
+          sectionId: scope.sectionId,
+          subjectId: scope.subjectId,
+        },
+      };
+
+      const data = {
+        classTestMarks: parsed.classTestMarks,
+        classWorkMarks: parsed.classWorkMarks,
+        homeWorkMarks: parsed.homeWorkMarks,
+        termExamMarks: parsed.termExamMarks,
+        enteredById: teacherProfile?.id || null,
+      };
+
+      const saved = await prisma.termExamMark.upsert({
+        where,
+        update: data,
+        create: {
+          studentId,
+          academicSessionId: scope.academicSessionId,
+          semesterId: scope.semesterId,
+          schoolClassId: scope.schoolClassId,
+          sectionId: scope.sectionId,
+          subjectId: scope.subjectId,
+          ...data,
+        },
+      });
+      results.push(saved);
+    }
+
+    res.json({ successCount: results.length, errorCount: errors.length, errors });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  TERM_EXAM_MAX_MARKS,
+  getTermExamMarks,
+  bulkUpsertTermExamMarks,
+};
