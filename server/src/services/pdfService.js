@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const fs = require('fs').promises;
 const path = require('path');
 const { ZipArchive } = require('archiver');
+const { getCategoryKind } = require('./semesterResultService');
 
 /**
  * Generate PDF from HTML template
@@ -130,11 +131,14 @@ const generateMarksheetHTML = async (data) => {
     const jsonData = safeParse(snapshot.jsonData);
     if (jsonData.categoryResults) {
       Object.keys(jsonData.categoryResults).forEach((categoryCode) => {
+        const catData = jsonData.categoryResults[categoryCode];
+        // Hide exam-category (Term Exam) columns from the marksheet
+        if (getCategoryKind({ code: categoryCode, name: catData.categoryName }) === 'EXAM') return;
         if (!categories[categoryCode]) {
           categories[categoryCode] = {
             code: categoryCode,
-            name: jsonData.categoryResults[categoryCode].categoryName,
-            weightage: jsonData.categoryResults[categoryCode].categoryWeightage,
+            name: catData.categoryName,
+            weightage: catData.categoryWeightage,
             assessments: [],
           };
         }

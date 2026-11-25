@@ -261,7 +261,7 @@ body {
 
 .student-grid {
     display: grid;
-    grid-template-columns: 1.5fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
     padding: 12px;
     gap: 14px 16px;
 }
@@ -272,7 +272,7 @@ body {
 
 .info-label {
     display: block;
-    font-size: 7px;
+    font-size: 10px;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: .5px;
@@ -282,7 +282,7 @@ body {
 .info-value {
     display: block;
     color: var(--text);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: bold;
     overflow-wrap: anywhere;
 }
@@ -826,19 +826,14 @@ tbody tr:nth-child(odd) td {
                     <span class="info-value">{{STUDENT_NAME}}</span>
                 </div>
 
-                <div class="info-item">
+                <!-- <div class="info-item">
                     <span class="info-label">Student ID</span>
                     <span class="info-value">{{STUDENT_ID}}</span>
-                </div>
+                </div> -->
 
                 <div class="info-item">
                     <span class="info-label">Class / Section</span>
                     <span class="info-value">{{CLASS}} / {{SECTION}}</span>
-                </div>
-
-                <div class="info-item">
-                    <span class="info-label">Working Days</span>
-                    <span class="info-value">{{WORKING_DAYS}}</span>
                 </div>
 
                 <div class="info-item">
