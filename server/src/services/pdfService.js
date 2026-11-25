@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { ZipArchive } = require('archiver');
 const { getCategoryKind } = require('./semesterResultService');
+const { isPrimaryClassName } = require('../utils/examMode');
 
 /**
  * Generate PDF from HTML template
@@ -279,15 +280,38 @@ const generateExamReportHTML = async (data) => {
     remark = '',
     classTeacherName = '',
     gradingPolicy = null,
+    isPrimary = false,
   } = data;
 
+  // Fallback detection when the flag isn't passed explicitly
+  const primary = isPrimary || isPrimaryClassName(enrollment?.schoolClass?.name);
+
   const fmt = (v) => (v === null || v === undefined ? 'N/A' : String(Math.round(Number(v))));
+  const fm = (v) => (v === null || v === undefined ? 'N/A' : formatMark(v, 2));
+
+  const componentMark = (result, key) => result?.breakdown?.[key]?.marks ?? null;
 
   const subjectRows = subjectResults.map(({ subject, result }) => {
     const highest = highestBySubject[subject.id];
     const highestDisplay = highest !== null && highest !== undefined
       ? fmt(highest)
       : 'N/A';
+
+    if (primary) {
+      return `
+      <tr>
+        <td class="subject-name">${subject.name}</td>
+        <td class="mark-value">${fm(componentMark(result, 'classTest'))}</td>
+        <td class="mark-value">${fm(componentMark(result, 'classWork'))}</td>
+        <td class="mark-value">${fm(componentMark(result, 'homeWork'))}</td>
+        <td class="mark-value">${fm(componentMark(result, 'attendance'))}</td>
+        <td class="total-cell">${fmt(result.percentage)}%</td>
+        <td class="total-cell">${result.grade || '-'}</td>
+        <td class="mark-value">${highestDisplay}</td>
+      </tr>
+    `;
+    }
+
     return `
       <tr>
         <td class="subject-name">${subject.name}</td>
@@ -301,7 +325,19 @@ const generateExamReportHTML = async (data) => {
   }).join('');
 
   const gradedCount = subjectResults.length;
-  const summaryRow = gradedCount > 0 ? `
+  const summaryRow = gradedCount > 0
+    ? (primary ? `
+    <tr class="summary-row">
+      <td class="subject-name">Total</td>
+      <td>${fm(subjectResults.reduce((s, x) => s + (componentMark(x.result, 'classTest') || 0), 0))}</td>
+      <td>${fm(subjectResults.reduce((s, x) => s + (componentMark(x.result, 'classWork') || 0), 0))}</td>
+      <td>${fm(subjectResults.reduce((s, x) => s + (componentMark(x.result, 'homeWork') || 0), 0))}</td>
+      <td>${fm(subjectResults.reduce((s, x) => s + (componentMark(x.result, 'attendance') || 0), 0))}</td>
+      <td>${fmt(summary.percentage)}%</td>
+      <td>${summary.overallGrade || '-'}</td>
+      <td>-</td>
+    </tr>
+  ` : `
     <tr class="summary-row">
       <td class="subject-name">Total</td>
       <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.classMarks || 0), 0))}</td>
@@ -310,7 +346,8 @@ const generateExamReportHTML = async (data) => {
       <td>${summary.overallGrade || '-'}</td>
       <td>-</td>
     </tr>
-  ` : '';
+  `)
+    : '';
 
   const gradingTable = '';
 
@@ -339,6 +376,9 @@ const generateExamReportHTML = async (data) => {
     '{{CLASS_TEACHER_NAME}}': classTeacherName || schoolSettings?.classTeacherSignature || 'Class Teacher',
     '{{SUBJECT_ROWS}}': subjectRows,
     '{{SUMMARY_ROW}}': summaryRow,
+    '{{TABLE_HEADER}}': primary
+      ? '<th>Subject</th><th>CT (40)</th><th>CW (20)</th><th>HW (20)</th><th>Attendance (20)</th><th>Total</th><th>Grade</th><th>Highest Marks Obtained</th>'
+      : '<th>Subject</th><th>Class Marks (40%)</th><th>Exam Marks (60%)</th><th>Total</th><th>Grade</th><th>Highest Marks Obtained</th>',
     '{{TOTAL_MARKS}}': fmt(summary.totalMarks),
     '{{AVERAGE_PERCENTAGE}}': fmt(summary.percentage),
     '{{GPA}}': summary.gpa !== null && summary.gpa !== undefined ? Number(summary.gpa).toFixed(2) : 'N/A',

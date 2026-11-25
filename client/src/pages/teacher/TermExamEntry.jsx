@@ -9,11 +9,19 @@ import Select from '../../components/Select';
 import Table from '../../components/Table';
 import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
-const MARK_FIELDS = [
+const STANDARD_FIELDS = [
   { key: 'classTestMarks', label: 'CT', maxKey: 'classTestMarks' },
   { key: 'classWorkMarks', label: 'CW', maxKey: 'classWorkMarks' },
   { key: 'homeWorkMarks', label: 'HW', maxKey: 'homeWorkMarks' },
   { key: 'termExamMarks', label: 'Term Exam', maxKey: 'termExamMarks' },
+];
+
+// Grade 1-3 (primary): no term exam — CT(40) + CW(20) + HW(20) = Class Marks(80) + Attendance(20)
+const PRIMARY_FIELDS = [
+  { key: 'classTestMarks', label: 'CT', maxKey: 'classTestMarks' },
+  { key: 'classWorkMarks', label: 'CW', maxKey: 'classWorkMarks' },
+  { key: 'homeWorkMarks', label: 'HW', maxKey: 'homeWorkMarks' },
+  { key: 'attendanceMarks', label: 'Attendance', maxKey: 'attendanceMarks' },
 ];
 
 const toNumber = (v) => (v === null || v === undefined || v === '' ? null : parseFloat(v));
@@ -31,7 +39,8 @@ export default function TermExamEntry() {
   const [semesters, setSemesters] = useState([]);
   const [sections, setSections] = useState([]);
   const [classSubjectIds, setClassSubjectIds] = useState([]);
-  const [marks, setMarks] = useState({}); // studentId -> { classTestMarks, classWorkMarks, homeWorkMarks, termExamMarks }
+  const [marks, setMarks] = useState({}); // studentId -> mark fields depend on exam mode
+  const [mode, setMode] = useState('STANDARD');
   const [studentSearch, setStudentSearch] = useState('');
   const [savedSnapshot, setSavedSnapshot] = useState('');
 
@@ -78,6 +87,8 @@ export default function TermExamEntry() {
       const data = await termExamAPI.getMarks(cleanParams(filter));
       setStudents(data.students || []);
       setMaxMarks(data.maxMarks || {});
+      setMode(data.mode || 'STANDARD');
+      const isPrimary = data.mode === 'PRIMARY';
 
       const initialMarks = {};
       data.students.forEach((s) => {
@@ -86,7 +97,8 @@ export default function TermExamEntry() {
           classTestMarks: m?.classTestMarks ?? '',
           classWorkMarks: m?.classWorkMarks ?? '',
           homeWorkMarks: m?.homeWorkMarks ?? '',
-          termExamMarks: m?.termExamMarks ?? '',
+          termExamMarks: isPrimary ? '' : (m?.termExamMarks ?? ''),
+          attendanceMarks: isPrimary ? (m?.attendanceMarks ?? '') : '',
         };
       });
       setMarks(initialMarks);
@@ -123,10 +135,12 @@ export default function TermExamEntry() {
     }));
   };
 
+  const markFields = mode === 'PRIMARY' ? PRIMARY_FIELDS : STANDARD_FIELDS;
+
   const rowTotal = (studentId) => {
     const m = marks[studentId] || {};
-    return ['classTestMarks', 'classWorkMarks', 'homeWorkMarks', 'termExamMarks']
-      .reduce((sum, f) => sum + (toNumber(m[f]) ?? 0), 0);
+    return markFields
+      .reduce((sum, f) => sum + (toNumber(m[f.key]) ?? 0), 0);
   };
 
   const handleSubmit = async () => {
@@ -134,7 +148,7 @@ export default function TermExamEntry() {
       setSaving(true);
       const entries = students.map((s) => ({
         studentId: s.student.id,
-        classTestMarks: '', classWorkMarks: '', homeWorkMarks: '', termExamMarks: '',
+        classTestMarks: '', classWorkMarks: '', homeWorkMarks: '', termExamMarks: '', attendanceMarks: '',
         ...marks[s.student.id],
       }));
       const result = await termExamAPI.bulkUpsert({ ...cleanParams(filter), entries });
@@ -209,7 +223,7 @@ export default function TermExamEntry() {
   const hasUnsavedChanges = savedSnapshot !== JSON.stringify(marks);
   const invalidMarks = students.some((s) => {
     const m = marks[s.student?.id] || {};
-    return MARK_FIELDS.some(({ key, maxKey }) => {
+    return markFields.some(({ key, maxKey }) => {
       const v = toNumber(m[key]);
       return v !== null && (!Number.isFinite(v) || v < 0 || v > parseFloat(maxMarks[maxKey] || Infinity));
     });
@@ -218,7 +232,7 @@ export default function TermExamEntry() {
   const columns = [
     { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
     { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
-    ...MARK_FIELDS.map(({ key, label, maxKey }) => ({
+    ...markFields.map(({ key, label, maxKey }) => ({
       key,
       label: `${label} (${maxMarks[maxKey] ?? '-'})`,
       render: (val, row) => (
@@ -231,7 +245,7 @@ export default function TermExamEntry() {
     {
       key: 'total', label: 'Total',
       render: (val, row) => {
-        const anyFilled = MARK_FIELDS.some(({ key }) => toNumber(marks[row.student?.id]?.[key]) !== null);
+        const anyFilled = markFields.some(({ key }) => toNumber(marks[row.student?.id]?.[key]) !== null);
         return anyFilled ? rowTotal(row.student.id) : '';
       },
     },
@@ -271,13 +285,15 @@ export default function TermExamEntry() {
                 {loading ? 'Loading...' : 'Load Students'}
               </Button>
               <p className="mt-2 text-xs text-gray-500">
-                CT (max 20) + CW (max 10) + HW (max 10) = Class Marks (40); Term Exam (max 60) = Exam Marks.
+                {mode === 'PRIMARY'
+                  ? 'CT (max 40) + CW (max 20) + HW (max 20) = Class Marks (80); Attendance (max 20). Total = 100. Grade 1-3 has no term exam.'
+                  : 'CT (max 20) + CW (max 10) + HW (max 10) = Class Marks (40); Term Exam (max 60) = Exam Marks.'}
               </p>
             </div>
           </Card>
 
           {students.length > 0 && (
-            <Card title="Term Exam Marks Entry">
+            <Card title={mode === 'PRIMARY' ? 'Class Marks & Attendance Entry' : 'Term Exam Marks Entry'}>
               {loading ? <div className="text-center py-8">Loading...</div> : (
                 <>
                   <div className="mb-4 flex flex-wrap items-center gap-3">

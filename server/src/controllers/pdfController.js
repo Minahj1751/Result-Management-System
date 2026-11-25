@@ -1,6 +1,7 @@
 const pdfService = require('../services/pdfService');
 const resultCalculationService = require('../services/resultCalculationService');
 const semesterResultService = require('../services/semesterResultService');
+const { getClassExamMode, EXAM_MODES } = require('../utils/examMode');
 const prisma = require('../config/database');
 const path = require('path');
 const fs = require('fs').promises;
@@ -355,7 +356,7 @@ const generateClassMarksheets = async (req, res, next) => {
  * consistent across every student's report card.
  */
 const getExamReportContext = async ({ academicSessionId, semesterId, schoolClassId, sectionId }) => {
-  const [schoolSettings, semester, gradingPolicy, sectionData, classTeacherAssignment] = await Promise.all([
+  const [schoolSettings, semester, gradingPolicy, sectionData, classTeacherAssignment, classExamMode] = await Promise.all([
     prisma.schoolSettings.findFirst(),
     prisma.semester.findUnique({ where: { id: semesterId }, select: { name: true } }),
     prisma.gradingPolicy.findFirst({
@@ -374,6 +375,7 @@ const getExamReportContext = async ({ academicSessionId, semesterId, schoolClass
       include: { teacher: true },
       orderBy: { semesterId: 'desc' },
     }),
+    getClassExamMode(schoolClassId),
   ]);
 
   const highestBySubject = {};
@@ -388,6 +390,7 @@ const getExamReportContext = async ({ academicSessionId, semesterId, schoolClass
     sectionData,
     highestBySubject,
     classTeacherName: classTeacherAssignment?.teacher?.fullName || '',
+    isPrimary: classExamMode.mode === EXAM_MODES.PRIMARY,
   };
 };
 
@@ -420,6 +423,7 @@ const buildExamReportData = async (ctx, studentEntry) => {
     remark: remark?.remarks || '',
     classTeacherName: ctx.classTeacherName,
     gradingPolicy: ctx.gradingPolicy,
+    isPrimary: ctx.isPrimary,
   };
 };
 

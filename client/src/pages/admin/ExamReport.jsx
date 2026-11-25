@@ -176,7 +176,7 @@ export default function ExamReport() {
           )}
         </div>
         <p className="mt-3 text-sm text-gray-500">
-          Report card: Class Marks 40% (CT best-2, CW/HW rule-based) + Exam Marks 60%. Requires Term Exam assessments and class teacher remarks.
+          Report card: Grade 4+ — Class Marks 40% (CT best-2, CW/HW rule-based) + Exam Marks 60%. Grade 1-3 — CT(40) + CW(20) + HW(20) = Class Marks(80) + Attendance(20), no term exam. Requires Term Exam marks entry and class teacher remarks.
         </p>
       </Card>
       {students.length > 0 && (

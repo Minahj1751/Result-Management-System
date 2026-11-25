@@ -1,11 +1,18 @@
 const prisma = require('../config/database');
+const { getClassExamMode } = require('../utils/examMode');
 
 /**
- * Term Exam module: subject teachers enter the four report-card
- * components directly per student — CT (out of 20), CW (out of 10),
+ * Term Exam module: subject teachers enter the report-card
+ * components directly per student.
+ *
+ * Standard classes (Grade 4+): CT (out of 20), CW (out of 10),
  * HW (out of 10) which sum to Class Marks (out of 40), and Term Exam
  * (out of 60). When a row exists it takes precedence over the
  * assessment-based semester result calculation.
+ *
+ * Primary classes (Grade 1-3): no term exam — CT (out of 40),
+ * CW (out of 20), HW (out of 20) sum to Class Marks (out of 80),
+ * plus Attendance (out of 20) for a 100-mark total.
  */
 const TERM_EXAM_MAX_MARKS = {
   classTestMarks: 20,
@@ -13,8 +20,6 @@ const TERM_EXAM_MAX_MARKS = {
   homeWorkMarks: 10,
   termExamMarks: 60,
 };
-
-const MARK_FIELDS = Object.keys(TERM_EXAM_MAX_MARKS);
 
 const scopeFromQuery = (q) => ({
   academicSessionId: q.academicSessionId,
@@ -66,12 +71,12 @@ const assertTeacherAssignedToScope = async (req, scope) => {
   }
 };
 
-const parseMark = (value, field) => {
-  if (value === null || value === undefined || value === '') return null;
+const parseMark = (value, field, maxMarks) => {
+  if (value === null || value === undefined || value === '') return { value: null };
   const n = parseFloat(value);
   if (!Number.isFinite(n) || n < 0) return { error: `${field} must be a number >= 0` };
-  if (n > TERM_EXAM_MAX_MARKS[field]) {
-    return { error: `${field} cannot exceed ${TERM_EXAM_MAX_MARKS[field]}` };
+  if (n > maxMarks[field]) {
+    return { error: `${field} cannot exceed ${maxMarks[field]}` };
   }
   return { value: n };
 };
@@ -88,6 +93,8 @@ const getTermExamMarks = async (req, res, next) => {
     }
 
     await assertTeacherAssignedToScope(req, scope);
+
+    const { mode, maxMarks } = await getClassExamMode(scope.schoolClassId);
 
     const enrollments = await prisma.studentEnrollment.findMany({
       where: {
@@ -127,7 +134,7 @@ const getTermExamMarks = async (req, res, next) => {
       marks: marksMap.get(enrollment.studentId) || null,
     }));
 
-    res.json({ scope, maxMarks: TERM_EXAM_MAX_MARKS, students });
+    res.json({ scope, mode, maxMarks, students });
   } catch (error) {
     next(error);
   }
@@ -157,6 +164,8 @@ const bulkUpsertTermExamMarks = async (req, res, next) => {
 
     await assertTeacherAssignedToScope(req, scope);
 
+    const { mode, maxMarks, markFields } = await getClassExamMode(scope.schoolClassId);
+
     const teacherProfile = req.user.teacherProfile;
     const results = [];
     const errors = [];
@@ -170,8 +179,8 @@ const bulkUpsertTermExamMarks = async (req, res, next) => {
 
       const parsed = {};
       let entryError = null;
-      for (const field of MARK_FIELDS) {
-        const r = parseMark(entry[field], field);
+      for (const field of markFields) {
+        const r = parseMark(entry[field], field, maxMarks);
         if (r.error) { entryError = r.error; break; }
         parsed[field] = r.value;
       }
@@ -209,10 +218,11 @@ const bulkUpsertTermExamMarks = async (req, res, next) => {
       };
 
       const data = {
-        classTestMarks: parsed.classTestMarks,
-        classWorkMarks: parsed.classWorkMarks,
-        homeWorkMarks: parsed.homeWorkMarks,
-        termExamMarks: parsed.termExamMarks,
+        classTestMarks: parsed.classTestMarks ?? null,
+        classWorkMarks: parsed.classWorkMarks ?? null,
+        homeWorkMarks: parsed.homeWorkMarks ?? null,
+        termExamMarks: mode === 'PRIMARY' ? null : (parsed.termExamMarks ?? null),
+        attendanceMarks: mode === 'PRIMARY' ? (parsed.attendanceMarks ?? null) : null,
         enteredById: teacherProfile?.id || null,
       };
 
@@ -243,3 +253,4 @@ module.exports = {
   getTermExamMarks,
   bulkUpsertTermExamMarks,
 };
+

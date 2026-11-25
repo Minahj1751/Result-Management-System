@@ -1,14 +1,19 @@
 const prisma = require('../config/database');
+const { EXAM_MODES, MAX_MARKS_BY_MODE, getClassExamMode } = require('../utils/examMode');
 
 /**
  * Semester Examination result calculation.
  *
- * Scheme (per subject, per student):
+ * Standard classes (Grade 4+), per subject per student:
  *   Class Test  -> best 2 of N assessments -> 20 marks
  *   Class Work  -> rule-based (best 2 avg / best 1)  -> 10 marks
  *   Home Work   -> rule-based (best 2 avg / best 1)  -> 10 marks
  *   Term Exam   -> all exam-category assessments aggregated -> 60 marks
  *   Total       -> out of 100
+ *
+ * Primary classes (Grade 1-3): no term exam.
+ *   CT -> 40, CW -> 20, HW -> 20 = Class Marks (80);
+ *   Attendance marks (20, direct entry) complete the 100-mark total.
  *
  * This is intentionally separate from resultCalculationService so the
  * existing assessment marksheet keeps working unchanged.
@@ -171,10 +176,15 @@ const gradeFor = (percentage, gradingPolicy) => {
  * Returns null when the subject has no eligible assessments at all.
  */
 const calculateStudentSubjectSemesterResult = async (
-  studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId
+  studentId, academicSessionId, semesterId, schoolClassId, sectionId, subjectId, examMode = null
 ) => {
+  const mode = examMode || (await getClassExamMode(schoolClassId)).mode;
+  const isPrimary = mode === EXAM_MODES.PRIMARY;
+  const maxMarks = MAX_MARKS_BY_MODE[mode];
+
   // Direct Term Exam entry takes precedence over assessment-based marks.
-  // CT (20) + CW (10) + HW (10) = Class Marks (40); Term Exam (60) = Exam Marks.
+  // Standard: CT (20) + CW (10) + HW (10) = Class Marks (40); Term Exam (60) = Exam Marks.
+  // Primary:   CT (40) + CW (20) + HW (20) = Class Marks (80); Attendance (20).
   const directMark = await prisma.termExamMark.findUnique({
     where: {
       termExamMark_unique: {
@@ -189,9 +199,10 @@ const calculateStudentSubjectSemesterResult = async (
     const classWorkMarks = toN(directMark.classWorkMarks);
     const homeWorkMarks = toN(directMark.homeWorkMarks);
     const examMarks = toN(directMark.termExamMarks);
+    const attendanceMarks = toN(directMark.attendanceMarks);
 
-    const classMarks = round2(classTestMarks + classWorkMarks + homeWorkMarks); // out of 40
-    const totalMarks = round2(classMarks + examMarks); // out of 100
+    const classMarks = round2(classTestMarks + classWorkMarks + homeWorkMarks); // out of 40 (std) / 80 (primary)
+    const totalMarks = round2(classMarks + (isPrimary ? attendanceMarks : examMarks)); // out of 100
     const percentage = round2(totalMarks);
 
     const gradingPolicy = await getGradingPolicy();
@@ -213,14 +224,25 @@ const calculateStudentSubjectSemesterResult = async (
       subjectId,
       assessmentRule: null,
       directEntry: true,
-      breakdown: {
-        classTest: part(classTestMarks, 20),
-        classWork: part(classWorkMarks, 10),
-        homeWork: part(homeWorkMarks, 10),
-        exam: part(examMarks, 60),
-      },
+      examMode: mode,
+      isPrimary,
+      breakdown: isPrimary
+        ? {
+            classTest: part(classTestMarks, maxMarks.classTestMarks),
+            classWork: part(classWorkMarks, maxMarks.classWorkMarks),
+            homeWork: part(homeWorkMarks, maxMarks.homeWorkMarks),
+            exam: null,
+            attendance: part(attendanceMarks, maxMarks.attendanceMarks),
+          }
+        : {
+            classTest: part(classTestMarks, maxMarks.classTestMarks),
+            classWork: part(classWorkMarks, maxMarks.classWorkMarks),
+            homeWork: part(homeWorkMarks, maxMarks.homeWorkMarks),
+            exam: part(examMarks, maxMarks.termExamMarks),
+          },
       classMarks,
-      examMarks,
+      examMarks: isPrimary ? null : examMarks,
+      attendanceMarks: isPrimary ? attendanceMarks : null,
       totalMarks,
       percentage,
       grade,
@@ -247,18 +269,25 @@ const calculateStudentSubjectSemesterResult = async (
   const ct = scoreGroup(getCandidates(byKind.CT, studentId), 'best2sum');
   const cw = scoreGroup(getCandidates(byKind.CW, studentId), cwHwMode);
   const hw = scoreGroup(getCandidates(byKind.HW, studentId), cwHwMode);
-  const exam = scoreGroup(getCandidates(byKind.EXAM, studentId), 'aggregate');
+  // Primary classes have no term exam — exam-category assessments are ignored.
+  const exam = isPrimary ? null : scoreGroup(getCandidates(byKind.EXAM, studentId), 'aggregate');
 
   if (!ct && !cw && !hw && !exam) return null;
 
-  // Scale each portion to its fixed weight: CT->20, CW->10, HW->10, EXAM->60
-  const classTestMarks = ct ? round2((ct.percentage * 20) / 100) : 0;
-  const classWorkMarks = cw ? round2((cw.percentage * 10) / 100) : 0;
-  const homeWorkMarks = hw ? round2((hw.percentage * 10) / 100) : 0;
-  const examMarks = exam ? round2((exam.percentage * 60) / 100) : 0;
+  // Scale each portion to its fixed weight.
+  // Standard: CT->20, CW->10, HW->10, EXAM->60 (Class Marks 40 + Exam 60)
+  // Primary:   CT->40, CW->20, HW->20 (Class Marks 80; attendance added via direct entry)
+  const weights = isPrimary
+    ? { ct: maxMarks.classTestMarks, cw: maxMarks.classWorkMarks, hw: maxMarks.homeWorkMarks, exam: 0 }
+    : { ct: maxMarks.classTestMarks, cw: maxMarks.classWorkMarks, hw: maxMarks.homeWorkMarks, exam: maxMarks.termExamMarks };
 
-  const classMarks = round2(classTestMarks + classWorkMarks + homeWorkMarks); // out of 40
-  const totalMarks = round2(classMarks + examMarks); // out of 100
+  const classTestMarks = ct ? round2((ct.percentage * weights.ct) / 100) : 0;
+  const classWorkMarks = cw ? round2((cw.percentage * weights.cw) / 100) : 0;
+  const homeWorkMarks = hw ? round2((hw.percentage * weights.hw) / 100) : 0;
+  const examMarks = exam ? round2((exam.percentage * weights.exam) / 100) : 0;
+
+  const classMarks = round2(classTestMarks + classWorkMarks + homeWorkMarks); // out of 40 (std) / 80 (primary)
+  const totalMarks = round2(classMarks + (isPrimary ? 0 : examMarks)); // out of 100
   const percentage = round2(totalMarks);
 
   const gradingPolicy = await getGradingPolicy();
@@ -272,14 +301,18 @@ const calculateStudentSubjectSemesterResult = async (
     sectionId,
     subjectId,
     assessmentRule: rule,
+    examMode: mode,
+    isPrimary,
     breakdown: {
       classTest: ct ? { ...ct, marks: classTestMarks } : null,
       classWork: cw ? { ...cw, marks: classWorkMarks } : null,
       homeWork: hw ? { ...hw, marks: homeWorkMarks } : null,
       exam: exam ? { ...exam, marks: examMarks } : null,
+      attendance: null,
     },
-    classMarks,   // out of 40
-    examMarks,    // out of 60
+    classMarks,   // out of 40 (std) / 80 (primary)
+    examMarks: isPrimary ? null : examMarks, // out of 60
+    attendanceMarks: null,
     totalMarks,   // out of 100
     percentage,   // same as totalMarks (out of 100)
     grade,
@@ -348,14 +381,15 @@ const getStudentSubjects = async (studentId, academicSessionId, semesterId, scho
  * subjectResults: [{ subject, result }]
  */
 const calculateStudentSemesterResult = async (
-  studentId, academicSessionId, semesterId, schoolClassId, sectionId
+  studentId, academicSessionId, semesterId, schoolClassId, sectionId, examMode = null
 ) => {
+  const mode = examMode || (await getClassExamMode(schoolClassId)).mode;
   const subjects = await getStudentSubjects(studentId, academicSessionId, semesterId, schoolClassId, sectionId);
   const subjectResults = [];
 
   for (const subject of subjects) {
     const result = await calculateStudentSubjectSemesterResult(
-      studentId, academicSessionId, semesterId, schoolClassId, sectionId, subject.id
+      studentId, academicSessionId, semesterId, schoolClassId, sectionId, subject.id, mode
     );
     if (result) subjectResults.push({ subject, result });
   }
@@ -369,6 +403,8 @@ const calculateStudentSemesterResult = async (
  * (used for the "Highest Marks Obtained" column on the report card).
  */
 const calculateSectionSemesterResults = async (academicSessionId, semesterId, schoolClassId, sectionId) => {
+  const { mode: examMode } = await getClassExamMode(schoolClassId);
+
   const enrollmentRows = await prisma.studentEnrollment.findMany({
     where: {
       academicSessionId,
@@ -400,7 +436,7 @@ const calculateSectionSemesterResults = async (academicSessionId, semesterId, sc
 
   for (const enrollment of enrollments) {
     const subjectResults = await calculateStudentSemesterResult(
-      enrollment.studentId, academicSessionId, semesterId, schoolClassId, sectionId
+      enrollment.studentId, academicSessionId, semesterId, schoolClassId, sectionId, examMode
     );
     studentResults.push({ student: enrollment.student, enrollment, subjectResults });
 
