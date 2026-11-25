@@ -238,7 +238,7 @@ const exportResults = async (req, res, next) => {
         className: s.schoolClass?.name || '',
         section: s.section?.name || '',
         subject: s.subject?.name || '',
-        score: parseFloat(s.percentage),
+        score: s.percentage !== null && s.percentage !== undefined ? Math.round(parseFloat(s.percentage)) : '',
         grade: s.grade || '',
         gp: s.gradePoint !== null ? parseFloat(s.gradePoint) : '',
       });

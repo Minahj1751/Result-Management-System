@@ -109,7 +109,7 @@ export default function ResultsManagement() {
       <div className="text-sm">
         {(row.subjects || []).map((sub, idx) => (
           <div key={idx} className="mb-1">
-            {sub.subject?.name}: {sub.result?.grade || 'N/A'} ({sub.result?.finalPercentage?.toFixed(2) || 0}%)
+            {sub.subject?.name}: {sub.result?.grade || 'N/A'} ({sub.result?.finalPercentage != null ? Math.round(sub.result.finalPercentage) : 0}%)
           </div>
         ))}
       </div>

@@ -102,7 +102,7 @@ const generateMarksheetHTML = async (data) => {
   // Calculate attendance percentage
   let attendancePercentage = '';
   if (attendance && attendance.totalWorkingDays > 0) {
-    const percentage = ((attendance.daysAttended / attendance.totalWorkingDays) * 100).toFixed(2);
+    const percentage = Math.round((attendance.daysAttended / attendance.totalWorkingDays) * 100);
     if (schoolSettings?.showAttendancePercentage) {
       attendancePercentage = `(${percentage}%)`;
     }
@@ -186,7 +186,7 @@ const generateMarksheetHTML = async (data) => {
             } else if (assessment.status === 'NOT_APPLICABLE') {
               markDisplay = 'N/A';
             } else if (assessment.marksObtained !== null && assessment.marksObtained !== undefined) {
-              markDisplay = formatMark(assessment.marksObtained, schoolSettings?.decimalPrecision ?? 2);
+              markDisplay = formatMark(assessment.marksObtained, 0);
             }
           }
         }
@@ -195,7 +195,7 @@ const generateMarksheetHTML = async (data) => {
     });
 
     const pctDisplay = snapshot.percentage !== null && snapshot.percentage !== undefined
-      ? `${Number(snapshot.percentage).toFixed(schoolSettings?.decimalPrecision || 2)}%`
+      ? `${Math.round(Number(snapshot.percentage))}%`
       : 'N/A';
     const gpDisplay = snapshot.gradePoint !== null && snapshot.gradePoint !== undefined
       ? Number(snapshot.gradePoint).toFixed(2)
@@ -277,8 +277,7 @@ const generateExamReportHTML = async (data) => {
     gradingPolicy = null,
   } = data;
 
-  const precision = schoolSettings?.decimalPrecision ?? 2;
-  const fmt = (v) => (v === null || v === undefined ? 'N/A' : Number(v).toFixed(precision));
+  const fmt = (v) => (v === null || v === undefined ? 'N/A' : String(Math.round(Number(v))));
 
   const subjectRows = subjectResults.map(({ subject, result }) => {
     const highest = highestBySubject[subject.id];
@@ -288,8 +287,8 @@ const generateExamReportHTML = async (data) => {
     return `
       <tr>
         <td class="subject-name">${subject.name}</td>
-        <td class="mark-value">${fmt(result.classMarks)} / 40</td>
-        <td class="mark-value">${fmt(result.examMarks)} / 60</td>
+        <td class="mark-value">${fmt(result.classMarks)}</td>
+        <td class="mark-value">${fmt(result.examMarks)}</td>
         <td class="total-cell">${fmt(result.percentage)}%</td>
         <td class="total-cell">${result.grade || '-'}</td>
         <td class="mark-value">${highestDisplay}</td>
@@ -301,38 +300,15 @@ const generateExamReportHTML = async (data) => {
   const summaryRow = gradedCount > 0 ? `
     <tr class="summary-row">
       <td class="subject-name">Total</td>
-      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.classMarks || 0), 0))} / 40</td>
-      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.examMarks || 0), 0))} / 60</td>
+      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.classMarks || 0), 0))}</td>
+      <td>${fmt(subjectResults.reduce((s, x) => s + (x.result.examMarks || 0), 0))}</td>
       <td>${fmt(summary.percentage)}%</td>
       <td>${summary.overallGrade || '-'}</td>
       <td>-</td>
     </tr>
   ` : '';
 
-  let gradingTable = '';
-  if (gradingPolicy && gradingPolicy.gradeScales && gradingPolicy.gradeScales.length > 0) {
-    const scaleRows = gradingPolicy.gradeScales
-      .slice()
-      .sort((a, b) => parseFloat(b.minPercentage) - parseFloat(a.minPercentage))
-      .map((scale) => `
-        <tr>
-          <td>${scale.grade}</td>
-          <td>${formatMark(scale.minPercentage, 0)}% - ${formatMark(scale.maxPercentage, 0)}%</td>
-          <td>${scale.gradePoint !== null && scale.gradePoint !== undefined ? Number(scale.gradePoint).toFixed(2) : '-'}</td>
-        </tr>
-      `).join('');
-    gradingTable = `
-      <section>
-        <div class="section-title">Grading Scale</div>
-        <table class="grading-table">
-          <thead>
-            <tr><th>Grade</th><th>Percentage Range</th><th>Grade Point</th></tr>
-          </thead>
-          <tbody>${scaleRows}</tbody>
-        </table>
-      </section>
-    `;
-  }
+  const gradingTable = '';
 
   const resultStatus = summary.resultStatus || 'N/A';
   const resultClass = resultStatus === 'PASS' ? 'pass' : resultStatus === 'FAIL' ? 'fail' : '';

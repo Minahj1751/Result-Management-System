@@ -224,9 +224,9 @@ body {
 
 .student-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     padding: 12px;
-    gap: 14px 16px;
+    gap: 18px 20px;
 }
 
 .info-item {
@@ -235,7 +235,7 @@ body {
 
 .info-label {
     display: block;
-    font-size: 7px;
+    font-size: 10px;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: .5px;
@@ -245,7 +245,7 @@ body {
 .info-value {
     display: block;
     color: var(--text);
-    font-size: 10px;
+    font-size: 14px;
     font-weight: bold;
     overflow-wrap: anywhere;
 }
@@ -539,7 +539,7 @@ tbody tr:nth-child(odd) td {
     <section class="report-heading">
         <div>
             <div class="report-title">Semester Examination Report</div>
-            <div class="report-subtitle">Class Marks 40% &nbsp;|&nbsp; Exam Marks 60%</div>
+            <!-- <div class="report-subtitle">Class Marks 40% &nbsp;|&nbsp; Exam Marks 60%</div> -->
             <div class="session-line">
                 <span class="session-semester">{{SEMESTER}}</span>
                 <span class="session-separator">|</span>
@@ -560,26 +560,26 @@ tbody tr:nth-child(odd) td {
                     <span class="info-label">Student Name</span>
                     <span class="info-value">{{STUDENT_NAME}}</span>
                 </div>
-                <div class="info-item">
+                <!-- <div class="info-item">
                     <span class="info-label">Student ID</span>
                     <span class="info-value">{{STUDENT_ID}}</span>
-                </div>
+                </div> -->
                 <div class="info-item">
                     <span class="info-label">Class / Section</span>
                     <span class="info-value">{{CLASS}} / {{SECTION}}</span>
                 </div>
-                <div class="info-item">
+                <!-- <div class="info-item">
                     <span class="info-label">Roll Number</span>
                     <span class="info-value">{{ROLL_NUMBER}}</span>
-                </div>
+                </div> -->
                 <div class="info-item">
                     <span class="info-label">Report Date</span>
                     <span class="info-value">{{REPORT_DATE}}</span>
                 </div>
-                <div class="info-item">
+                <!-- <div class="info-item">
                     <span class="info-label">Class Teacher</span>
                     <span class="info-value">{{CLASS_TEACHER_NAME}}</span>
-                </div>
+                </div> -->
             </div>
         </section>
 
@@ -592,9 +592,9 @@ tbody tr:nth-child(odd) td {
                     <thead>
                         <tr>
                             <th>Subject</th>
-                            <th>Class Marks (40)</th>
-                            <th>Exam Marks (60)</th>
-                            <th>Total (%)</th>
+                            <th>Class Marks (40%)</th>
+                            <th>Exam Marks (60%)</th>
+                            <th>Total</th>
                             <th>Grade</th>
                             <th>Highest Marks Obtained</th>
                         </tr>
@@ -647,11 +647,11 @@ tbody tr:nth-child(odd) td {
 
         <section class="signatures">
             <div class="signature">
-                <div class="signature-name">{{CLASS_TEACHER_NAME}}</div>
+                <!-- <div class="signature-name">{{CLASS_TEACHER_NAME}}</div> -->
                 <div class="signature-line">Class Teacher</div>
             </div>
             <div class="signature">
-                <div class="signature-name">{{PRINCIPAL_SIGNATURE}}</div>
+                <!-- <div class="signature-name">{{PRINCIPAL_SIGNATURE}}</div> -->
                 <div class="signature-line">Principal</div>
             </div>
         </section>

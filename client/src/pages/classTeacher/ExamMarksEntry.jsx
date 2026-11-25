@@ -80,14 +80,20 @@ export default function ExamMarksEntry() {
   const loadRemarks = async (assignment, semesterId) => {
     if (!assignment || !semesterId) return;
     try {
-      const [data, studentsRes] = await Promise.all([
-        remarkAPI.getSectionRemarks(scopeParams(assignment, semesterId)),
-        studentAPI.getStudents({ ...scopeParams(assignment, semesterId), limit: 500 }),
-      ]);
+      const studentsRes = await studentAPI.getStudents({ ...scopeParams(assignment, semesterId), limit: 500 });
+      const list = studentsRes.students || studentsRes || [];
+      setRemarkStudents(list.map((s) => ({
+        student: s,
+        enrollment: (s.enrollments || []).find((e) => e.semesterId === semesterId) || s.enrollments?.[0] || {},
+      })));
+    } catch (error) {
+      console.error('Error loading remark students:', error);
+    }
+    try {
+      const data = await remarkAPI.getSectionRemarks(scopeParams(assignment, semesterId));
       const map = {};
       (data || []).forEach((r) => { map[r.studentId] = r.remarks || ''; });
       setRemarks(map);
-      setRemarkStudents(studentsRes.students || studentsRes || []);
     } catch (error) {
       console.error('Error loading remarks:', error);
     }

@@ -11,6 +11,9 @@ import Select from '../../components/Select';
 import Table from '../../components/Table';
 import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
+const EXAM_CATEGORY_CODES = new Set(['TERM_EXAM', 'EXAM', 'FINAL_EXAM']);
+const isExamAssessment = (a) => EXAM_CATEGORY_CODES.has(String(a?.category?.code || '').toUpperCase());
+
 export default function MarksEntry() {
   const [myAssignments, setMyAssignments] = useState([]);
   const [assessments, setAssessments] = useState([]);
@@ -174,6 +177,8 @@ export default function MarksEntry() {
     }
   };
 
+  const showDates = !!selectedAssessment && !isExamAssessment(selectedAssessment);
+
   const columns = [
     { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
     { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
@@ -202,14 +207,14 @@ export default function MarksEntry() {
           className="w-32" />
       ),
     },
-    {
+    ...(showDates ? [{
       key: 'individualDate', label: 'Date Override',
       render: (val, row) => (
         <Input type="date" value={individualDates[row.student?.id] || ''}
           onChange={(e) => setIndividualDates({ ...individualDates, [row.student.id]: e.target.value })}
           className="w-36" />
       ),
-    },
+    }] : []),
   ];
 
   // Filter options are scoped to the teacher's own assignments and narrowed
@@ -279,7 +284,7 @@ export default function MarksEntry() {
       ) : (
         <>
           <Card className="mb-6">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               <Select placeholder="Session" value={filter.academicSessionId}
                 onChange={(e) => handleAssignmentChange('academicSessionId', e.target.value)}
                 options={[...new Map(myAssignments.map((a) => [a.academicSessionId, a.academicSession])).values()]
@@ -322,20 +327,19 @@ export default function MarksEntry() {
 
           {assessments.length > 0 && (
             <Card className="mb-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Select Assessment</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {assessments.map((assessment) => (
-                  <button key={assessment.id} onClick={() => loadStudentsForAssessment(assessment)}
-                    className={`p-4 border rounded-md text-left transition-colors ${
-                      selectedAssessment?.id === assessment.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'
-                    }`}>
-                    <div className="font-medium">{assessment.name}</div>
-                    <div className="text-sm text-gray-600">{assessment.category?.name}</div>
-                    <div className="text-sm text-gray-600">Max: {assessment.maximumMarks} | {assessment.submissionStatus}</div>
-                    <div className="text-sm text-gray-500">{assessment.defaultDate ? `Date: ${new Date(assessment.defaultDate).toLocaleDateString()}` : 'Date: not set'}</div>
-                  </button>
-                ))}
-              </div>
+              <Select
+                label="Select Assessment"
+                value={selectedAssessment?.id || ''}
+                onChange={(e) => {
+                  const assessment = assessments.find((a) => a.id === e.target.value);
+                  if (assessment) loadStudentsForAssessment(assessment);
+                  else { setSelectedAssessment(null); setStudents([]); }
+                }}
+                options={assessments.map((a) => ({
+                  value: a.id,
+                  label: `${a.name} — ${a.category?.name || 'Assessment'} (Max: ${a.maximumMarks})`,
+                }))}
+              />
             </Card>
           )}
 
@@ -343,18 +347,20 @@ export default function MarksEntry() {
             <Card title={`Marks Entry — ${selectedAssessment.name} (Max: ${selectedAssessment.maximumMarks})`}>
               {loading ? <div className="text-center py-8">Loading...</div> : (
                 <>
-                  <div className="mb-4 flex flex-wrap items-end gap-3">
-                    <div>
-                      <label className="ui-field-label">Assessment Date</label>
-                      <Input type="date" value={assessmentDate}
-                        onChange={(e) => setAssessmentDate(e.target.value)}
-                        className="w-40" />
+                  {showDates && (
+                    <div className="mb-4 flex flex-wrap items-end gap-3">
+                      <div>
+                        <label className="ui-field-label">Assessment Date</label>
+                        <Input type="date" value={assessmentDate}
+                          onChange={(e) => setAssessmentDate(e.target.value)}
+                          className="w-40" />
+                      </div>
+                      <Button size="sm" variant="secondary" onClick={handleAssessmentDateSave} disabled={savingDate}>
+                        {savingDate ? 'Saving...' : 'Save Date'}
+                      </Button>
+                      <span className="text-xs text-gray-500">The date this assessment was taken for this class & subject.</span>
                     </div>
-                    <Button size="sm" variant="secondary" onClick={handleAssessmentDateSave} disabled={savingDate}>
-                      {savingDate ? 'Saving...' : 'Save Date'}
-                    </Button>
-                    <span className="text-xs text-gray-500">The date this assessment was taken for this class & subject.</span>
-                  </div>
+                  )}
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <Input
                       placeholder="Search by name, ID or roll..."
