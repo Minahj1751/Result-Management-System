@@ -7,6 +7,7 @@ import Card from '../../components/Card';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
 import Modal from '../../components/Modal';
+import { fitPreviewHtml } from '../../utils/fitPreviewHtml';
 
 export default function PDFGeneration() {
   const [students, setStudents] = useState([]);
@@ -67,7 +68,7 @@ export default function PDFGeneration() {
       setPreviewStudent(student);
       setPreviewHtml('');
       const html = await pdfAPI.getStudentMarksheetPreview({ ...cleanParams(filter), studentId: student.id });
-      setPreviewHtml(html);
+      setPreviewHtml(fitPreviewHtml(html));
     } catch (error) {
       console.error('Error generating preview:', error);
       alert('Error generating preview');
@@ -157,7 +158,7 @@ export default function PDFGeneration() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">PDF Marksheet Generation</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Class Mark Generation</h1>
       <Card className="mb-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Select placeholder="Select Session" value={filter.academicSessionId} onChange={(e) => handleSessionChange(e.target.value)} options={sessions.map((s) => ({ value: s.id, label: s.name }))} />

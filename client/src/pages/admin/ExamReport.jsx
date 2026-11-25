@@ -7,6 +7,7 @@ import Card from '../../components/Card';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
 import Modal from '../../components/Modal';
+import { fitPreviewHtml } from '../../utils/fitPreviewHtml';
 
 export default function ExamReport() {
   const [students, setStudents] = useState([]);
@@ -67,7 +68,7 @@ export default function ExamReport() {
       setPreviewStudent(student);
       setPreviewHtml('');
       const html = await pdfAPI.getExamReportPreview({ ...cleanParams(filter), studentId: student.id });
-      setPreviewHtml(html);
+      setPreviewHtml(fitPreviewHtml(html));
     } catch (error) {
       console.error('Error generating preview:', error);
       alert(error.response?.data?.error || 'Error generating preview');
@@ -159,7 +160,7 @@ export default function ExamReport() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Semester Examination Report</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Exam Report Card</h1>
       <Card className="mb-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Select placeholder="Select Session" value={filter.academicSessionId} onChange={(e) => handleSessionChange(e.target.value)} options={sessions.map((s) => ({ value: s.id, label: s.name }))} />

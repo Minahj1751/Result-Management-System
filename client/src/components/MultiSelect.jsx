@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Reusable multi-select dropdown.
@@ -25,6 +25,42 @@ export default function MultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [panelStyle, setPanelStyle] = useState(null);
+  const triggerRef = useRef(null);
+
+  const computePanelStyle = () => {
+    const el = triggerRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 8;
+    const gap = 6;
+    const width = Math.min(Math.max(rect.width, 240), vw - margin * 2);
+    const left = Math.min(
+      Math.max(rect.left + rect.width / 2 - width / 2, margin),
+      vw - width - margin
+    );
+    const spaceBelow = vh - rect.bottom - gap - margin;
+    const spaceAbove = rect.top - gap - margin;
+    const openUp = spaceBelow < 240 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(160, Math.min(openUp ? spaceAbove : spaceBelow, vh - margin * 2));
+    return openUp
+      ? { bottom: vh - rect.top + gap, left, width, maxHeight }
+      : { top: rect.bottom + gap, left, width, maxHeight };
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const update = () => setPanelStyle(computePanelStyle());
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open]);
 
   const selectedSet = useMemo(() => new Set(value), [value]);
 
@@ -70,6 +106,7 @@ export default function MultiSelect({
         </label>
       )}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
@@ -104,10 +141,10 @@ export default function MultiSelect({
         </div>
       )}
 
-      {open && (
+      {open && panelStyle && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="ui-multiselect-panel">
+          <div className="ui-multiselect-panel" style={{ position: 'fixed', zIndex: 40, ...panelStyle }}>
             <div className="ui-multiselect-search-wrap">
               <input
                 type="text"

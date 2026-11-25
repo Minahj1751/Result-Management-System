@@ -128,7 +128,6 @@ export default function ResultsManagement() {
           <Select placeholder="Select Semester" value={filter.semesterId} onChange={(e) => setFilter({ ...filter, semesterId: e.target.value })} options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
           <Select placeholder="Select Class" value={filter.schoolClassId} onChange={(e) => handleClassChange(e.target.value)} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
           <MultiSelect
-            label="Sections"
             options={sectionOptions}
             value={filter.sectionIds}
             onChange={(v) => setFilter((f) => ({ ...f, sectionIds: v }))}

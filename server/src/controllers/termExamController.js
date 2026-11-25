@@ -39,8 +39,10 @@ const missingScope = (scope) =>
   }).filter(([, v]) => !v).map(([k]) => k);
 
 /**
- * Ensure the requesting teacher is assigned to this class/section/subject.
- * Admins bypass the check.
+ * Ensure the requesting teacher is allowed to enter marks for this scope.
+ * Admins bypass. Subject teachers need a subject assignment.
+ * Class teachers may enter marks only for primary classes (Grade 1-3)
+ * via their class teacher assignment.
  */
 const assertTeacherAssignedToScope = async (req, scope) => {
   if (req.user.role === 'ADMIN') return;
@@ -50,6 +52,45 @@ const assertTeacherAssignedToScope = async (req, scope) => {
     const error = new Error('Teacher profile not found');
     error.statusCode = 403;
     throw error;
+  }
+
+  if (req.user.role === 'CLASS_TEACHER') {
+    const { mode } = await getClassExamMode(scope.schoolClassId);
+    if (mode !== 'PRIMARY') {
+      const error = new Error('Class teachers can enter marks only for primary classes (Grade 1-3)');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    const assignment = await prisma.classTeacherAssignment.findFirst({
+      where: {
+        teacherId: profile.id,
+        academicSessionId: scope.academicSessionId,
+        OR: [{ semesterId: scope.semesterId }, { semesterId: null }],
+        schoolClassId: scope.schoolClassId,
+        sectionId: scope.sectionId,
+        isActive: true,
+      },
+    });
+
+    if (!assignment) {
+      const error = new Error('You are not assigned to this class and section');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    // When the class has subject mappings, the subject must be one of them
+    const mappings = await prisma.classSubject.findMany({
+      where: { schoolClassId: scope.schoolClassId },
+      select: { subjectId: true },
+    });
+    if (mappings.length > 0 && !mappings.some((m) => m.subjectId === scope.subjectId)) {
+      const error = new Error('Subject is not mapped to this class');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    return;
   }
 
   const assignment = await prisma.teacherAssignment.findFirst({

@@ -5,15 +5,27 @@ import { assessmentAPI } from '../../api/assessmentService';
 import { marksAPI } from '../../api/marksService';
 import { remarkAPI } from '../../api/remarkService';
 import { studentAPI } from '../../api/studentService';
+import { termExamAPI } from '../../api/termExamService';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Select from '../../components/Select';
 import Table from '../../components/Table';
 import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
+import { isPrimaryClassName, PRIMARY_MAX_MARKS } from '../../utils/examMode';
 
 const EXAM_CATEGORY_CODES = new Set(['TERM_EXAM', 'EXAM', 'FINAL_EXAM']);
 const isExamAssessment = (a) => EXAM_CATEGORY_CODES.has(String(a.category?.code || '').toUpperCase());
+
+// Grade 1-3 (primary): CT(40) + CW(20) + HW(20) = Class Marks(80) + Attendance(20)
+const PRIMARY_FIELDS = [
+  { key: 'classTestMarks', label: 'CT' },
+  { key: 'classWorkMarks', label: 'CW' },
+  { key: 'homeWorkMarks', label: 'HW' },
+  { key: 'attendanceMarks', label: 'Attendance' },
+];
+
+const toNum = (v) => (v === '' || v === null || v === undefined ? null : parseFloat(v));
 
 export default function ExamMarksEntry() {
   const [assignments, setAssignments] = useState([]);
@@ -31,8 +43,17 @@ export default function ExamMarksEntry() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
+  const [primarySubjects, setPrimarySubjects] = useState([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState('');
+  const [primaryStudents, setPrimaryStudents] = useState([]);
+  const [primaryMarks, setPrimaryMarks] = useState({});
+  const [primaryMaxMarks, setPrimaryMaxMarks] = useState(PRIMARY_MAX_MARKS);
+  const [primaryLoading, setPrimaryLoading] = useState(false);
+  const [primarySaving, setPrimarySaving] = useState(false);
+  const [primarySearch, setPrimarySearch] = useState('');
 
   const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId) || null;
+  const isPrimary = isPrimaryClassName(selectedAssignment?.schoolClass?.name);
 
   useEffect(() => {
     loadInitialData();
@@ -113,6 +134,7 @@ export default function ExamMarksEntry() {
       setSelectedSemesterId(semesterId);
       loadExamAssessments(assignment, semesterId);
       loadRemarks(assignment, semesterId);
+      loadPrimarySubjects(assignment);
     } catch (error) {
       console.error('Error loading semesters:', error);
     }
@@ -125,6 +147,8 @@ export default function ExamMarksEntry() {
   const handleSemesterChange = (e) => {
     const semesterId = e.target.value;
     setSelectedSemesterId(semesterId);
+    setPrimaryStudents([]);
+    setPrimaryMarks({});
     loadExamAssessments(selectedAssignment, semesterId);
     loadRemarks(selectedAssignment, semesterId);
   };
@@ -174,6 +198,81 @@ export default function ExamMarksEntry() {
     }
   };
 
+  const loadPrimarySubjects = async (assignment) => {
+    setPrimarySubjects([]);
+    setSelectedSubjectId('');
+    setPrimaryStudents([]);
+    setPrimaryMarks({});
+    if (!assignment || !isPrimaryClassName(assignment.schoolClass?.name)) return;
+    try {
+      const mappings = await academicAPI.getClassSubjects(assignment.schoolClassId);
+      const opts = (mappings || [])
+        .map((m) => ({ value: m.subjectId, label: m.subject?.name || m.subjectId }))
+        .filter((o) => o.value);
+      setPrimarySubjects(opts);
+      if (opts.length === 1) setSelectedSubjectId(opts[0].value);
+    } catch (error) {
+      console.error('Error loading class subjects:', error);
+    }
+  };
+
+  const loadPrimaryMarks = async () => {
+    if (!selectedAssignment || !selectedSemesterId || !selectedSubjectId) return;
+    try {
+      setPrimaryLoading(true);
+      const data = await termExamAPI.getMarks({ ...scopeParams(), subjectId: selectedSubjectId });
+      setPrimaryStudents(data.students || []);
+      setPrimaryMaxMarks(data.maxMarks || PRIMARY_MAX_MARKS);
+      const initial = {};
+      (data.students || []).forEach((s) => {
+        const m = s.marks;
+        initial[s.student.id] = {
+          classTestMarks: m?.classTestMarks ?? '',
+          classWorkMarks: m?.classWorkMarks ?? '',
+          homeWorkMarks: m?.homeWorkMarks ?? '',
+          attendanceMarks: m?.attendanceMarks ?? '',
+        };
+      });
+      setPrimaryMarks(initial);
+      setPrimarySearch('');
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error loading students');
+    } finally {
+      setPrimaryLoading(false);
+    }
+  };
+
+  const setPrimaryMark = (studentId, field, value) => {
+    setPrimaryMarks((prev) => ({ ...prev, [studentId]: { ...prev[studentId], [field]: value } }));
+  };
+
+  const primaryRowTotal = (studentId) => {
+    const m = primaryMarks[studentId] || {};
+    return PRIMARY_FIELDS.reduce((sum, f) => {
+      const v = toNum(m[f.key]);
+      return sum + (v !== null && Number.isFinite(v) ? v : 0);
+    }, 0);
+  };
+
+  const savePrimaryMarks = async () => {
+    try {
+      setPrimarySaving(true);
+      const entries = primaryStudents.map((s) => ({
+        studentId: s.student.id,
+        classTestMarks: '', classWorkMarks: '', homeWorkMarks: '', termExamMarks: '', attendanceMarks: '',
+        ...(primaryMarks[s.student.id] || {}),
+      }));
+      const result = await termExamAPI.bulkUpsert({ ...scopeParams(), subjectId: selectedSubjectId, entries });
+      const errorMsg = result.errors?.length ? ` — ${result.errors.length} errors: ${result.errors[0].error}` : '';
+      alert(`Saved: ${result.successCount} entries, ${result.errorCount} errors${errorMsg}`);
+      loadPrimaryMarks();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Error saving marks');
+    } finally {
+      setPrimarySaving(false);
+    }
+  };
+
   const saveRemark = async (studentId) => {
     try {
       setRemarkSavingId(studentId);
@@ -201,6 +300,42 @@ export default function ExamMarksEntry() {
     const v = marks[s.student?.id];
     return v !== undefined && v !== '' && (!Number.isFinite(parseFloat(v)) || parseFloat(v) < 0 || parseFloat(v) > parseFloat(selectedAssessment?.maximumMarks || Infinity));
   });
+
+  const pq = primarySearch.trim().toLowerCase();
+  const visiblePrimaryStudents = pq
+    ? primaryStudents.filter((s) =>
+        (s.student?.fullName || '').toLowerCase().includes(pq) ||
+        (s.student?.studentId || '').toLowerCase().includes(pq) ||
+        String(s.enrollment?.rollNumber ?? '').includes(pq))
+    : primaryStudents;
+
+  const invalidPrimaryMarks = primaryStudents.some((s) => PRIMARY_FIELDS.some(({ key }) => {
+    const v = toNum(primaryMarks[s.student?.id]?.[key]);
+    return v !== null && (!Number.isFinite(v) || v < 0 || v > parseFloat(primaryMaxMarks[key] || Infinity));
+  }));
+
+  const primaryColumns = [
+    { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
+    { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
+    { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
+    ...PRIMARY_FIELDS.map(({ key, label }) => ({
+      key,
+      label: `${label} (${primaryMaxMarks[key] ?? '-'})`,
+      render: (val, row) => (
+        <Input type="number" step="0.01" min="0" max={primaryMaxMarks[key]}
+          value={primaryMarks[row.student?.id]?.[key] ?? ''}
+          onChange={(e) => setPrimaryMark(row.student.id, key, e.target.value)}
+          className="w-24" />
+      ),
+    })),
+    {
+      key: 'total', label: 'Total',
+      render: (val, row) => {
+        const anyFilled = PRIMARY_FIELDS.some(({ key }) => toNum(primaryMarks[row.student?.id]?.[key]) !== null);
+        return anyFilled ? primaryRowTotal(row.student.id) : '';
+      },
+    },
+  ];
 
   const markColumns = [
     { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
@@ -258,6 +393,51 @@ export default function ExamMarksEntry() {
               </div>
             </div>
           </Card>
+
+          {isPrimary && (
+            <Card className="mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-1">Class Marks &amp; Attendance Entry</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Grade 1-3: CT (max 40) + CW (max 20) + HW (max 20) = Class Marks (80); Attendance (max 20). Total = 100. No term exam.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Select label="Subject" value={selectedSubjectId}
+                  onChange={(e) => { setSelectedSubjectId(e.target.value); setPrimaryStudents([]); setPrimaryMarks({}); }}
+                  options={primarySubjects} />
+                <div className="flex items-end">
+                  <Button onClick={loadPrimaryMarks} disabled={primaryLoading || !selectedSubjectId || !selectedSemesterId}>
+                    {primaryLoading ? 'Loading...' : 'Load Students'}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {isPrimary && primaryStudents.length > 0 && (
+            <Card className="mb-6" title="Class Marks & Attendance">
+              {primaryLoading ? <div className="text-center py-8">Loading...</div> : (
+                <>
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <Input placeholder="Search by name, ID or roll..." value={primarySearch}
+                      onChange={(e) => setPrimarySearch(e.target.value)} className="max-w-xs" />
+                    <span className="text-sm text-gray-600">Showing {visiblePrimaryStudents.length} of {primaryStudents.length} students</span>
+                    {invalidPrimaryMarks && (
+                      <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
+                        Some marks exceed the maximum or are invalid
+                      </span>
+                    )}
+                  </div>
+                  <Table columns={primaryColumns} data={visiblePrimaryStudents} emptyMessage="No students match your search" />
+                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
+                    <div className="text-sm text-gray-600">{primaryStudents.length} students</div>
+                    <Button onClick={savePrimaryMarks} disabled={primarySaving || invalidPrimaryMarks}>
+                      {primarySaving ? 'Saving...' : 'Save All Marks'}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
 
           {examAssessments.length > 0 && (
             <Card className="mb-6">

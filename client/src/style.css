@@ -560,13 +560,8 @@ textarea::placeholder {
 }
 
 .ui-multiselect-panel {
-  position: absolute;
-  z-index: 40;
-  top: calc(100% + 6px);
-  left: 0;
-  width: 100%;
-  min-width: 240px;
-  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
   border: 1px solid #e2e6ef;
   border-radius: 13px;
   background: #fff;
@@ -592,6 +587,8 @@ textarea::placeholder {
 }
 
 .ui-multiselect-options {
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 220px;
   overflow-y: auto;
 }

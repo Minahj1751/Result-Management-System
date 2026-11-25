@@ -22,8 +22,8 @@ const NAV_ITEMS = {
     { path: '/admin/subjects', label: 'Subjects', icon: '◇' },
     { path: '/admin/assessments', label: 'Assessments', icon: '✓' },
     { path: '/admin/results', label: 'Results', icon: '▤' },
-    { path: '/admin/pdf', label: 'PDF Generation', icon: '▧' },
-    { path: '/admin/exam-report', label: 'Exam Report', icon: '▦' },
+    { path: '/admin/pdf', label: 'Class Mark Generation', icon: '▧' },
+    { path: '/admin/exam-report', label: 'Exam Report Card', icon: '▦' },
     { path: '/admin/import', label: 'Excel Import', icon: '⇧' },
   ],
   SUBJECT_TEACHER: [
