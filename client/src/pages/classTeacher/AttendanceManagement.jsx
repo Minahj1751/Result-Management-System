@@ -103,8 +103,9 @@ export default function AttendanceManagement() {
       setFilter((f) => ({ ...f, semesterId: '' }));
     }
     if (key === 'schoolClassId') {
-      setSections(value ? await academicAPI.getSections(value) : []);
-      setFilter((f) => ({ ...f, sectionId: '' }));
+      const secs = value ? await academicAPI.getSections(value) : [];
+      setSections(secs);
+      setFilter((f) => ({ ...f, sectionId: secs.length === 1 ? secs[0].id : '' }));
     }
   };
 

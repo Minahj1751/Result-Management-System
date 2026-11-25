@@ -103,7 +103,6 @@ export default function TeacherManagement() {
   }, [pagination.page, pagination.limit, search]);
 
   const loadSemesters = async (sid) => setSemesters(sid ? await academicAPI.getSemesters(sid) : []);
-  const loadSections = async (cid) => setSections(cid ? await academicAPI.getSections(cid) : []);
 
   const handleSearch = (value) => {
     setSearch(value);
@@ -281,7 +280,7 @@ export default function TeacherManagement() {
 
   const handleAssignClassChange = async (e) => {
     const schoolClassId = e.target.value;
-    setAssignFilter({ ...assignFilter, schoolClassId, sectionId: '' });
+    setAssignFilter((f) => ({ ...f, schoolClassId, sectionId: '' }));
     setAssignSections([]);
     setClassSubjectList([]);
     setAssignMessage('');
@@ -291,6 +290,9 @@ export default function TeacherManagement() {
       academicAPI.getClassSubjects(schoolClassId),
     ]);
     setAssignSections(secs || []);
+    if ((secs || []).length === 1) {
+      setAssignFilter((f) => ({ ...f, sectionId: secs[0].id }));
+    }
     setClassSubjectList(
       (mappings || [])
         .map((m) => m.subject)
@@ -530,7 +532,12 @@ export default function TeacherManagement() {
         options={sessions.map((s) => ({ value: s.id, label: s.name }))} />
       <Select label="Semester (optional — all terms)" value={form.semesterId} onChange={(e) => setForm({ ...form, semesterId: e.target.value })}
         options={semesters.map((s) => ({ value: s.id, label: s.name }))} />
-      <Select label="Class" value={form.schoolClassId} required onChange={async (e) => { setForm({ ...form, schoolClassId: e.target.value, sectionId: '' }); await loadSections(e.target.value); }}
+      <Select label="Class" value={form.schoolClassId} required onChange={async (e) => {
+        const cid = e.target.value;
+        const secs = cid ? await academicAPI.getSections(cid) : [];
+        setSections(secs);
+        setForm({ ...form, schoolClassId: cid, sectionId: secs.length === 1 ? secs[0].id : '' });
+      }}
         options={classes.map((c) => ({ value: c.id, label: c.name }))} />
       <Select label="Section" value={form.sectionId} required onChange={(e) => setForm({ ...form, sectionId: e.target.value })}
         options={sections.map((s) => ({ value: s.id, label: s.name }))} />

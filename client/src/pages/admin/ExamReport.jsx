@@ -43,8 +43,9 @@ export default function ExamReport() {
   };
 
   const handleClassChange = async (schoolClassId) => {
-    setFilter((f) => ({ ...f, schoolClassId, sectionId: '' }));
-    setSections(schoolClassId ? await academicAPI.getSections(schoolClassId) : []);
+    const secs = schoolClassId ? await academicAPI.getSections(schoolClassId) : [];
+    setSections(secs);
+    setFilter((f) => ({ ...f, schoolClassId, sectionId: secs.length === 1 ? secs[0].id : '' }));
   };
 
   const loadStudents = async () => {

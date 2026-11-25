@@ -535,9 +535,9 @@ export default function AssessmentManagement() {
           <Select placeholder="Class" value={filter.schoolClassId}
             onChange={async (e) => {
               const cid = e.target.value;
-              setFilter((f) => ({ ...f, schoolClassId: cid, sectionId: '' }));
               const secs = cid ? await academicAPI.getSections(cid) : [];
               setFormSections(secs);
+              setFilter((f) => ({ ...f, schoolClassId: cid, sectionId: secs.length === 1 ? secs[0].id : '' }));
             }}
             options={classes.map((c) => ({ value: c.id, label: c.name }))} />
           <Select placeholder="Section" value={filter.sectionId} onChange={(e) => setFilter({ ...filter, sectionId: e.target.value })} options={formSections.map((s) => ({ value: s.id, label: s.name }))} />
@@ -817,7 +817,14 @@ export default function AssessmentManagement() {
                 {step === 0 ? 'Cancel' : 'Back'}
               </Button>
               {step < 3 ? (
-                <Button onClick={() => setStep(step + 1)} disabled={!canProceed()}>
+                <Button onClick={() => {
+                  if (step === 0 && selectedPairs.length === 0) {
+                    setSelectedPairs(classes.flatMap((cls) =>
+                      sectionsForClass(cls.id).map((sec) => ({ schoolClassId: cls.id, sectionId: sec.id }))
+                    ));
+                  }
+                  setStep(step + 1);
+                }} disabled={!canProceed()}>
                   Next
                 </Button>
               ) : (

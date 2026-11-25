@@ -261,6 +261,15 @@ export default function MarksEntry() {
     (a) => a.subject?.name || 'Subject'
   ).filter((o) => classSubjectIds.length === 0 || classSubjectIds.includes(o.value));
 
+  // Auto-select the section when the teacher only has one option for the scope
+  const sectionOptionsKey = sectionOptions.map((o) => o.value).join(',');
+  useEffect(() => {
+    if (!filter.sectionId && sectionOptions.length === 1) {
+      setFilter((f) => ({ ...f, sectionId: sectionOptions[0].value }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionOptionsKey, filter.sectionId]);
+
   const q = studentSearch.trim().toLowerCase();
   const visibleStudents = q
     ? students.filter((s) =>

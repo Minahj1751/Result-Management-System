@@ -51,7 +51,8 @@ export default function ResultsManagement() {
   };
 
   const handleClassChange = (schoolClassId) => {
-    setFilter((f) => ({ ...f, schoolClassId, sectionIds: [] }));
+    const secs = allSections.filter((s) => s.schoolClassId === schoolClassId);
+    setFilter((f) => ({ ...f, schoolClassId, sectionIds: secs.length === 1 ? [secs[0].id] : [] }));
   };
 
   const params = () => cleanParams({
