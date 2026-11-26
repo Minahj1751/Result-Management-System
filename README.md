@@ -33,15 +33,16 @@ A complete, database-driven school result management system built with React, No
 
 1. **Node.js** (v18 or higher)
 2. **MySQL** (v8.0 or higher)
-3. **npm** or **yarn**
+3. **npm**
+4. **Puppeteer** downloads its own Chromium on `npm install`; on Linux you may need extra system libraries (`npx puppeteer browsers install chrome` if PDF generation fails)
 
-## Installation
+## Installation (fresh clone from Git)
 
 ### 1. Clone the repository
 
 ```bash
 git clone <repository-url>
-cd ResultManagementSystem
+cd "Result Management System"
 ```
 
 ### 2. Install MySQL and create database
@@ -59,15 +60,34 @@ Using MySQL Command Line Client or MySQL Workbench:
 CREATE DATABASE nsd_result_management;
 ```
 
-### 3. Set up environment variables
+### 3. Install dependencies
 
-Copy the example environment file:
+There are **three** `package.json` files — install all of them:
 
 ```bash
-cp .env.example server/.env
+# Root (runs server + client together with `npm start`)
+npm install
+
+# Backend
+cd server
+npm install
+cd ..
+
+# Frontend
+cd client
+npm install
+cd ..
 ```
 
-Edit `server/.env` and update the database URL with your MySQL credentials:
+### 4. Set up environment variables
+
+Both `.env` files are git-ignored, so you must create them manually.
+
+**Backend** — copy the example and edit `server/.env`:
+
+```bash
+cp .env.example server/.env   # Windows: copy .env.example server/.env
+```
 
 ```env
 DATABASE_URL="mysql://root:YOUR_PASSWORD@localhost:3306/nsd_result_management"
@@ -79,81 +99,74 @@ JWT_EXPIRES_IN=7d
 NODE_ENV=development
 ```
 
-### 4. Install dependencies
+**Frontend** — create `client/.env` with the API URL:
 
-Install frontend dependencies:
-
-```bash
-cd client
-npm install
+```env
+VITE_API_URL=http://localhost:5000/api
 ```
 
-Install backend dependencies:
+### 5. Set up the database
 
 ```bash
 cd server
-npm install
-```
 
-### 5. Run Prisma migrations
+# Create all tables from the committed Prisma migrations
+npx prisma migrate deploy
 
-```bash
-cd server
-npx prisma migrate dev --name init
-```
+# (Generate the Prisma client — migrate deploy does not do this)
+npx prisma generate
 
-### 6. Seed the database
-
-```bash
-cd server
+# Seed demo data (admin user, sessions, classes, subjects, etc.)
 npm run prisma:seed
 ```
 
-This will create:
-- Admin user: `admin@newschooldhaka.edu` / `Admin@123`
-- Sample teachers
-- Sample students
-- Academic sessions
-- Classes, sections, and subjects
-- Assessment categories
-- Grading policy
+The seed creates the admin login:
 
-## Development
+- **Email:** `admin@newschooldhaka.edu`
+- **Password:** `Admin@123`
 
-### Start the backend server
+> Optional demo data scripts: `npm run prisma:demo-marks` and `npm run prisma:demo-exam` (in `server/`).
+
+### 6. Run the application
+
+**Run both at once** (from the project root):
 
 ```bash
-cd server
-npm run dev
+npm start
 ```
 
-The server will run on `http://localhost:5000`
-
-### Start the frontend development server
-
-In a new terminal:
+**Or run separately:**
 
 ```bash
-cd client
-npm run dev
+cd server && npm run dev   # backend  -> http://localhost:5000
+cd client && npm run dev   # frontend -> http://localhost:5173
 ```
 
-The frontend will run on `http://localhost:5173`
+Open http://localhost:5173 and log in with the seeded admin account.
 
 ## Production Build
+
+The backend does **not** serve the frontend — build the client and host `client/dist` separately (any static host or reverse proxy), with `/api` requests proxied to the backend.
 
 ### Build the frontend
 
 ```bash
 cd client
-npm run build
+npm run build      # outputs to client/dist
+npm run preview    # or serve dist/ locally to check the build
+```
+
+Before building, set `client/.env` so `VITE_API_URL` points at the deployed backend, e.g.:
+
+```env
+VITE_API_URL=https://your-domain.com/api
 ```
 
 ### Start the backend in production mode
 
 ```bash
 cd server
-npm start
+NODE_ENV=production npm start
 ```
 
 ## Database Management
@@ -257,15 +270,15 @@ nsd-result-management/
 
 ### Subject Teacher
 - View assigned classes, sections, and subjects
-- Enter marks for assigned assessments
-- Save draft marks
-- Submit marks for review
-- View submission status
+- Enter marks for assigned assessments (per-student form with status/date)
+- Enter Term Exam marks per subject — Grade 4+: Class Work (40) + Term Exam (60); Grade 1-3: CT/CW/HW + Attendance
+- Save marks with validation
 
 ### Class Teacher
 - View assigned class and section
 - Enter total working days
 - Enter student attendance
+- Enter exam/assessment marks and per-student remarks for primary classes
 - Review attendance totals and percentages
 
 ## Features
@@ -277,11 +290,15 @@ nsd-result-management/
 - ✅ Teacher assignments (subject and class teacher)
 - ✅ Student management with Excel import preview and validation
 - ✅ Assessment configuration with categories
-- ✅ Marks entry with validation and draft saving
+- ✅ Marks entry with validation (student-select form, mobile-friendly)
+- ✅ Term Exam marks module — direct Class Work/Term Exam entry per subject
 - ✅ Attendance management with percentage calculation
-- ✅ Result calculation with configurable grading policies
+- ✅ Semester result calculation (assessment-based + direct-entry override)
+- ✅ Grading policies and GPA
 - ✅ PDF marksheet generation with Puppeteer
+- ✅ Semester Examination Report cards (per student / whole class ZIP)
 - ✅ Bulk PDF downloads (ZIP) for entire classes
+- ✅ Excel import/export
 - ✅ Responsive design with Tailwind CSS
 
 ## Implementation Status
@@ -313,7 +330,10 @@ nsd-result-management/
 - ✅ Admin dashboard
 - ✅ Teacher dashboard
 - ✅ Class teacher dashboard
-- ⏳ Additional pages (students, teachers, assessments, marks entry, etc.) - To be implemented
+- ✅ Admin pages (sessions, classes, sections, subjects, students, teachers, assessments, results, PDF generation, Excel import)
+- ✅ Teacher pages (assessment marks entry, term exam marks entry)
+- ✅ Class teacher pages (attendance, exam marks & remarks, student subjects, marksheet preview)
+- ✅ Role-based dashboards and navigation
 
 ### Database (MySQL + Prisma)
 - ✅ Complete Prisma schema with all models
@@ -324,10 +344,8 @@ nsd-result-management/
 ## Known Limitations
 
 1. **MySQL Required**: The application requires MySQL to be running. Database migrations cannot be executed without MySQL.
-2. **Frontend Pages**: Only basic dashboard pages are implemented. Full CRUD pages for students, teachers, assessments, marks entry, etc. need to be built.
-3. **PDF Testing**: PDF generation requires Puppeteer which may need additional dependencies on some systems.
-4. **Tests**: Automated tests have not been implemented yet.
-5. **Audit Logging**: Audit log model exists but logging middleware is not fully implemented.
+2. **PDF Dependencies**: Puppeteer bundles Chromium, but on some Linux servers extra system libraries may be required for PDF generation.
+3. **Tests**: Only minimal automated tests exist (`server/tests`); most verification is manual.
 
 ## Troubleshooting
 
