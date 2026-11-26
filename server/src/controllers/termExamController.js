@@ -5,9 +5,9 @@ const { getClassExamMode } = require('../utils/examMode');
  * Term Exam module: subject teachers enter the report-card
  * components directly per student.
  *
- * Standard classes (Grade 4+): CT (out of 20), CW (out of 10),
- * HW (out of 10) which sum to Class Marks (out of 40), and Term Exam
- * (out of 60). When a row exists it takes precedence over the
+ * Standard classes (Grade 4+): a single Class Work mark (out of 40,
+ * stored in classWorkMarks — it covers CT+CW+HW combined) and Term
+ * Exam (out of 60). When a row exists it takes precedence over the
  * assessment-based semester result calculation.
  *
  * Primary classes (Grade 1-3): no term exam — CT (out of 40),
@@ -15,9 +15,7 @@ const { getClassExamMode } = require('../utils/examMode');
  * plus Attendance (out of 20) for a 100-mark total.
  */
 const TERM_EXAM_MAX_MARKS = {
-  classTestMarks: 20,
-  classWorkMarks: 10,
-  homeWorkMarks: 10,
+  classWorkMarks: 40,
   termExamMarks: 60,
 };
 

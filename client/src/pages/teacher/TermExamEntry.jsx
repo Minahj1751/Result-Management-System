@@ -6,13 +6,11 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Select from '../../components/Select';
-import Table from '../../components/Table';
 import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
+// Grade 4+: single combined Class Work mark (40) + Term Exam (60) = 100
 const STANDARD_FIELDS = [
-  { key: 'classTestMarks', label: 'CT', maxKey: 'classTestMarks' },
-  { key: 'classWorkMarks', label: 'CW', maxKey: 'classWorkMarks' },
-  { key: 'homeWorkMarks', label: 'HW', maxKey: 'homeWorkMarks' },
+  { key: 'classWorkMarks', label: 'Class Work', maxKey: 'classWorkMarks' },
   { key: 'termExamMarks', label: 'Term Exam', maxKey: 'termExamMarks' },
 ];
 
@@ -42,6 +40,7 @@ export default function TermExamEntry() {
   const [marks, setMarks] = useState({}); // studentId -> mark fields depend on exam mode
   const [mode, setMode] = useState('STANDARD');
   const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [savedSnapshot, setSavedSnapshot] = useState('');
 
   useEffect(() => { loadInitialData(); }, []);
@@ -93,16 +92,28 @@ export default function TermExamEntry() {
       const initialMarks = {};
       data.students.forEach((s) => {
         const m = s.marks;
+        // Rows saved before the combined Class Work column may still carry
+        // separate CT/CW/HW values — fold them into the Class Work input so
+        // the total is preserved when the row is next saved.
+        const isLegacySplit = !isPrimary && m && (m.classTestMarks != null || m.homeWorkMarks != null);
         initialMarks[s.student.id] = {
-          classTestMarks: m?.classTestMarks ?? '',
-          classWorkMarks: m?.classWorkMarks ?? '',
-          homeWorkMarks: m?.homeWorkMarks ?? '',
+          classTestMarks: isPrimary ? (m?.classTestMarks ?? '') : '',
+          classWorkMarks: isPrimary
+            ? (m?.classWorkMarks ?? '')
+            : isLegacySplit
+              ? String((toNumber(m.classTestMarks) ?? 0) + (toNumber(m.classWorkMarks) ?? 0) + (toNumber(m.homeWorkMarks) ?? 0))
+              : (m?.classWorkMarks ?? ''),
+          homeWorkMarks: isPrimary ? (m?.homeWorkMarks ?? '') : '',
           termExamMarks: isPrimary ? '' : (m?.termExamMarks ?? ''),
           attendanceMarks: isPrimary ? (m?.attendanceMarks ?? '') : '',
         };
       });
       setMarks(initialMarks);
       setStudentSearch('');
+      setSelectedStudentId((prev) => {
+        const ids = (data.students || []).map((s) => s.student.id);
+        return prev && ids.includes(prev) ? prev : (ids[0] || '');
+      });
       setSavedSnapshot(JSON.stringify(initialMarks));
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
@@ -144,14 +155,15 @@ export default function TermExamEntry() {
   };
 
   const handleSubmit = async () => {
+    if (!selectedStudentId) return;
     try {
       setSaving(true);
-      const entries = students.map((s) => ({
-        studentId: s.student.id,
+      const entry = {
+        studentId: selectedStudentId,
         classTestMarks: '', classWorkMarks: '', homeWorkMarks: '', termExamMarks: '', attendanceMarks: '',
-        ...marks[s.student.id],
-      }));
-      const result = await termExamAPI.bulkUpsert({ ...cleanParams(filter), entries });
+        ...marks[selectedStudentId],
+      };
+      const result = await termExamAPI.bulkUpsert({ ...cleanParams(filter), entries: [entry] });
       const errorMsg = result.errors?.length ? ` — ${result.errors.length} errors: ${result.errors[0].error}` : '';
       alert(`Saved: ${result.successCount} entries, ${result.errorCount} errors${errorMsg}`);
       loadStudents();
@@ -220,36 +232,26 @@ export default function TermExamEntry() {
         String(s.enrollment?.rollNumber ?? '').includes(q))
     : students;
 
+  const studentOptions = visibleStudents.map((s) => ({
+    value: s.student.id,
+    label: `${s.student?.fullName || 'Student'} — Roll ${s.enrollment?.rollNumber ?? '-'} — ${s.student?.studentId || ''}`,
+  }));
+
+  const selectedStudent = students.find((s) => s.student?.id === selectedStudentId) || null;
+
   const hasUnsavedChanges = savedSnapshot !== JSON.stringify(marks);
-  const invalidMarks = students.some((s) => {
-    const m = marks[s.student?.id] || {};
+  const invalidMarks = (() => {
+    if (!selectedStudentId) return false;
+    const m = marks[selectedStudentId] || {};
     return markFields.some(({ key, maxKey }) => {
       const v = toNumber(m[key]);
       return v !== null && (!Number.isFinite(v) || v < 0 || v > parseFloat(maxMarks[maxKey] || Infinity));
     });
-  });
+  })();
 
-  const columns = [
-    { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
-    { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
-    ...markFields.map(({ key, label, maxKey }) => ({
-      key,
-      label: `${label} (${maxMarks[maxKey] ?? '-'})`,
-      render: (val, row) => (
-        <Input type="number" step="0.01" min="0" max={maxMarks[maxKey]}
-          value={marks[row.student?.id]?.[key] ?? ''}
-          onChange={(e) => setMark(row.student.id, key, e.target.value)}
-          className="w-24" />
-      ),
-    })),
-    {
-      key: 'total', label: 'Total',
-      render: (val, row) => {
-        const anyFilled = markFields.some(({ key }) => toNumber(marks[row.student?.id]?.[key]) !== null);
-        return anyFilled ? rowTotal(row.student.id) : '';
-      },
-    },
-  ];
+  const selectedAnyFilled = selectedStudent
+    ? markFields.some(({ key }) => toNumber(marks[selectedStudent.id]?.[key]) !== null)
+    : false;
 
   const filtersReady = filter.academicSessionId && filter.semesterId && filter.schoolClassId && filter.sectionId && filter.subjectId;
 
@@ -287,7 +289,7 @@ export default function TermExamEntry() {
               <p className="mt-2 text-xs text-gray-500">
                 {mode === 'PRIMARY'
                   ? 'CT (max 40) + CW (max 20) + HW (max 20) = Class Marks (80); Attendance (max 20). Total = 100. Grade 1-3 has no term exam.'
-                  : 'CT (max 20) + CW (max 10) + HW (max 10) = Class Marks (40); Term Exam (max 60) = Exam Marks.'}
+                  : 'Class Work (max 40) + Term Exam (max 60) = 100.'}
               </p>
             </div>
           </Card>
@@ -304,7 +306,7 @@ export default function TermExamEntry() {
                       className="max-w-xs"
                     />
                     <span className="text-sm text-gray-600">
-                      Showing {visibleStudents.length} of {students.length} students
+                      {visibleStudents.length} of {students.length} students
                     </span>
                     {hasUnsavedChanges && (
                       <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
@@ -313,15 +315,50 @@ export default function TermExamEntry() {
                     )}
                     {invalidMarks && (
                       <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
-                        Some marks exceed the maximum or are invalid
+                        Marks exceed the maximum or are invalid
                       </span>
                     )}
                   </div>
-                  <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
-                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
-                    <div className="text-sm text-gray-600">{students.length} students</div>
-                    <Button onClick={handleSubmit} disabled={saving || invalidMarks}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Select
+                      label="Select Student"
+                      value={selectedStudentId}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      options={studentOptions}
+                      placeholder={studentOptions.length ? 'Choose a student' : 'No students match'}
+                    />
                   </div>
+                  {selectedStudent ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {markFields.map(({ key, label, maxKey }) => (
+                          <Input
+                            key={key}
+                            label={`${label} (max ${maxMarks[maxKey] ?? '-'})`}
+                            type="number" step="0.01" min="0" max={maxMarks[maxKey]}
+                            value={marks[selectedStudent.id]?.[key] ?? ''}
+                            onChange={(e) => setMark(selectedStudent.id, key, e.target.value)}
+                          />
+                        ))}
+                        <div>
+                          <span className="ui-field-label">Total</span>
+                          <div className="ui-input border-gray-300 bg-gray-50 text-gray-700">
+                            {selectedAnyFilled ? rowTotal(selectedStudent.id) : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
+                        <div className="text-sm text-gray-600">
+                          {selectedStudent.student?.fullName} — Roll {selectedStudent.enrollment?.rollNumber ?? '-'}
+                        </div>
+                        <Button onClick={handleSubmit} disabled={saving || invalidMarks || !selectedStudentId}>
+                          {saving ? 'Saving...' : 'Save Marks'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500">Select a student to enter marks.</p>
+                  )}
                 </>
               )}
             </Card>

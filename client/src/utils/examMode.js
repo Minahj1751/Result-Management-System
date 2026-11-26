@@ -1,6 +1,7 @@
 /**
  * Client-side mirror of server/src/utils/examMode.js (name-based detection only).
- * STANDARD (Grade 4+): CT(20) + CW(10) + HW(10) = Class Marks(40) + Term Exam(60).
+ * STANDARD (Grade 4+): combined Class Work(40) + Term Exam(60) entry;
+ *   assessment-based marks still scale CT(20)+CW(10)+HW(10) to Class Marks(40).
  * PRIMARY  (Grade 1-3): CT(40) + CW(20) + HW(20) = Class Marks(80) + Attendance(20).
  */
 export const EXAM_MODES = {

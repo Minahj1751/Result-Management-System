@@ -1,5 +1,5 @@
 const prisma = require('../config/database');
-const { EXAM_MODES, MAX_MARKS_BY_MODE, getClassExamMode } = require('../utils/examMode');
+const { EXAM_MODES, MAX_MARKS_BY_MODE, ENTRY_MAX_MARKS_BY_MODE, getClassExamMode } = require('../utils/examMode');
 
 /**
  * Semester Examination result calculation.
@@ -14,6 +14,10 @@ const { EXAM_MODES, MAX_MARKS_BY_MODE, getClassExamMode } = require('../utils/ex
  * Primary classes (Grade 1-3): no term exam.
  *   CT -> 40, CW -> 20, HW -> 20 = Class Marks (80);
  *   Attendance marks (20, direct entry) complete the 100-mark total.
+ *
+ * Direct Term Exam entry overrides this: Grade 4+ stores one combined
+ * Class Work mark (out of 40, in classWorkMarks) + Term Exam (60);
+ * Grade 1-3 stores CT/CW/HW + Attendance as before.
  *
  * This is intentionally separate from resultCalculationService so the
  * existing assessment marksheet keeps working unchanged.
@@ -183,7 +187,9 @@ const calculateStudentSubjectSemesterResult = async (
   const maxMarks = MAX_MARKS_BY_MODE[mode];
 
   // Direct Term Exam entry takes precedence over assessment-based marks.
-  // Standard: CT (20) + CW (10) + HW (10) = Class Marks (40); Term Exam (60) = Exam Marks.
+  // Standard: Class Work (40, stored in classWorkMarks) + Term Exam (60) = 100.
+  //   Rows saved before the combined Class Work column may still carry
+  //   separate CT/CW/HW values — they are summed into Class Marks.
   // Primary:   CT (40) + CW (20) + HW (20) = Class Marks (80); Attendance (20).
   const directMark = await prisma.termExamMark.findUnique({
     where: {
@@ -208,6 +214,7 @@ const calculateStudentSubjectSemesterResult = async (
     const gradingPolicy = await getGradingPolicy();
     const { grade, gradePoint } = gradeFor(percentage, gradingPolicy);
 
+    const entryMaxMarks = ENTRY_MAX_MARKS_BY_MODE[mode] || maxMarks;
     const part = (marks, max) => ({
       percentage: max > 0 ? round2((marks / max) * 100) : null,
       marks,
@@ -228,17 +235,17 @@ const calculateStudentSubjectSemesterResult = async (
       isPrimary,
       breakdown: isPrimary
         ? {
-            classTest: part(classTestMarks, maxMarks.classTestMarks),
-            classWork: part(classWorkMarks, maxMarks.classWorkMarks),
-            homeWork: part(homeWorkMarks, maxMarks.homeWorkMarks),
+            classTest: part(classTestMarks, entryMaxMarks.classTestMarks),
+            classWork: part(classWorkMarks, entryMaxMarks.classWorkMarks),
+            homeWork: part(homeWorkMarks, entryMaxMarks.homeWorkMarks),
             exam: null,
-            attendance: part(attendanceMarks, maxMarks.attendanceMarks),
+            attendance: part(attendanceMarks, entryMaxMarks.attendanceMarks),
           }
         : {
-            classTest: part(classTestMarks, maxMarks.classTestMarks),
-            classWork: part(classWorkMarks, maxMarks.classWorkMarks),
-            homeWork: part(homeWorkMarks, maxMarks.homeWorkMarks),
-            exam: part(examMarks, maxMarks.termExamMarks),
+            classTest: part(classTestMarks, entryMaxMarks.classTestMarks),
+            classWork: part(classWorkMarks, entryMaxMarks.classWorkMarks),
+            homeWork: part(homeWorkMarks, entryMaxMarks.homeWorkMarks),
+            exam: part(examMarks, entryMaxMarks.termExamMarks),
           },
       classMarks,
       examMarks: isPrimary ? null : examMarks,

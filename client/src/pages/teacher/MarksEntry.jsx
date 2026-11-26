@@ -8,7 +8,6 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Input from '../../components/Input';
 import Select from '../../components/Select';
-import Table from '../../components/Table';
 import { filterVisibleAssignments, filterVisibleSemesters } from '../../utils/semesterVisibility';
 
 const EXAM_CATEGORY_CODES = new Set(['TERM_EXAM', 'EXAM', 'FINAL_EXAM']);
@@ -34,6 +33,7 @@ export default function MarksEntry() {
   const [assessmentDate, setAssessmentDate] = useState('');
   const [savingDate, setSavingDate] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [savedSnapshot, setSavedSnapshot] = useState('');
 
   useEffect(() => { loadInitialData(); }, []);
@@ -136,6 +136,10 @@ export default function MarksEntry() {
       setIndividualDates(initialDates);
       setAssessmentDate(data.assessment.defaultDate?.split('T')[0] || '');
       setStudentSearch('');
+      setSelectedStudentId((prev) => {
+        const ids = (data.students || []).map((s) => s.student.id);
+        return prev && ids.includes(prev) ? prev : (ids[0] || '');
+      });
       setSavedSnapshot(JSON.stringify({ m: initialMarks, s: initialStatuses, d: initialDates }));
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
@@ -157,16 +161,17 @@ export default function MarksEntry() {
   };
 
   const handleSubmit = async () => {
+    if (!selectedStudentId || !selectedAssessment) return;
     try {
       setSaving(true);
-      const entries = students.map((student) => ({
-        studentId: student.student.id,
+      const entry = {
+        studentId: selectedStudentId,
         assessmentId: selectedAssessment.id,
-        marksObtained: marks[student.student.id] !== undefined && marks[student.student.id] !== '' ? marks[student.student.id] : null,
-        status: statuses[student.student.id] || 'PENDING',
-        individualDate: individualDates[student.student.id] || null,
-      }));
-      const result = await marksAPI.bulkUpsert(entries);
+        marksObtained: marks[selectedStudentId] !== undefined && marks[selectedStudentId] !== '' ? marks[selectedStudentId] : null,
+        status: statuses[selectedStudentId] || 'PENDING',
+        individualDate: individualDates[selectedStudentId] || null,
+      };
+      const result = await marksAPI.bulkUpsert([entry]);
       const errorMsg = result.errors?.length ? ` — ${result.errors.length} errors: ${result.errors[0].error}` : '';
       alert(`Saved: ${result.successCount} entries, ${result.errorCount} errors${errorMsg}`);
       loadStudentsForAssessment(selectedAssessment);
@@ -179,43 +184,8 @@ export default function MarksEntry() {
 
   const showDates = !!selectedAssessment && !isExamAssessment(selectedAssessment);
 
-  const columns = [
-    { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
-    { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
-    { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
-    {
-      key: 'marks', label: 'Marks Obtained',
-      render: (val, row) => (
-        <Input type="number" step="0.01" min="0" max={selectedAssessment?.maximumMarks}
-          value={marks[row.student?.id] ?? ''}
-          onChange={(e) => setMarks({ ...marks, [row.student.id]: e.target.value })}
-          className="w-24"
-          disabled={['ABSENT', 'EXEMPTED'].includes(statuses[row.student?.id])} />
-      ),
-    },
-    {
-      key: 'status', label: 'Status',
-      render: (val, row) => (
-        <Select value={statuses[row.student?.id] || 'PENDING'}
-          onChange={(e) => setStatuses({ ...statuses, [row.student.id]: e.target.value })}
-          options={[
-            { value: 'PENDING', label: 'Pending' },
-            { value: 'ABSENT', label: 'Absent' },
-            { value: 'EXEMPTED', label: 'Exempted' },
-            { value: 'NOT_APPLICABLE', label: 'N/A' },
-          ]}
-          className="w-32" />
-      ),
-    },
-    ...(showDates ? [{
-      key: 'individualDate', label: 'Date Override',
-      render: (val, row) => (
-        <Input type="date" value={individualDates[row.student?.id] || ''}
-          onChange={(e) => setIndividualDates({ ...individualDates, [row.student.id]: e.target.value })}
-          className="w-36" />
-      ),
-    }] : []),
-  ];
+  const selectedStudentStatus = statuses[selectedStudentId] || 'PENDING';
+  const marksDisabled = ['ABSENT', 'EXEMPTED'].includes(selectedStudentStatus);
 
   // Filter options are scoped to the teacher's own assignments and narrowed
   // by the filters already selected (session -> class -> section -> subject).
@@ -278,11 +248,19 @@ export default function MarksEntry() {
         String(s.enrollment?.rollNumber ?? '').includes(q))
     : students;
 
+  const studentOptions = visibleStudents.map((s) => ({
+    value: s.student.id,
+    label: `${s.student?.fullName || 'Student'} — Roll ${s.enrollment?.rollNumber ?? '-'} — ${s.student?.studentId || ''}`,
+  }));
+
+  const selectedStudent = students.find((s) => s.student?.id === selectedStudentId) || null;
+
   const hasUnsavedChanges = savedSnapshot !== JSON.stringify({ m: marks, s: statuses, d: individualDates });
-  const invalidMarks = students.some((s) => {
-    const v = marks[s.student?.id];
+  const invalidMarks = (() => {
+    if (!selectedStudentId) return false;
+    const v = marks[selectedStudentId];
     return v !== undefined && v !== '' && (!Number.isFinite(parseFloat(v)) || parseFloat(v) < 0 || parseFloat(v) > parseFloat(selectedAssessment?.maximumMarks || Infinity));
-  });
+  })();
 
   return (
     <div>
@@ -378,7 +356,7 @@ export default function MarksEntry() {
                       className="max-w-xs"
                     />
                     <span className="text-sm text-gray-600">
-                      Showing {visibleStudents.length} of {students.length} students
+                      {visibleStudents.length} of {students.length} students
                     </span>
                     {hasUnsavedChanges && (
                       <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
@@ -387,15 +365,61 @@ export default function MarksEntry() {
                     )}
                     {invalidMarks && (
                       <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
-                        Some marks exceed the maximum or are invalid
+                        Marks exceed the maximum or are invalid
                       </span>
                     )}
                   </div>
-                  <Table columns={columns} data={visibleStudents} emptyMessage="No students match your search" />
-                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
-                    <div className="text-sm text-gray-600">{students.length} students</div>
-                    <Button onClick={handleSubmit} disabled={saving || invalidMarks}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Select
+                      label="Select Student"
+                      value={selectedStudentId}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      options={studentOptions}
+                      placeholder={studentOptions.length ? 'Choose a student' : 'No students match'}
+                    />
                   </div>
+                  {selectedStudent ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <Input
+                          label={`Marks Obtained (max ${selectedAssessment?.maximumMarks ?? '-'})`}
+                          type="number" step="0.01" min="0" max={selectedAssessment?.maximumMarks}
+                          value={marks[selectedStudent.id] ?? ''}
+                          onChange={(e) => setMarks({ ...marks, [selectedStudent.id]: e.target.value })}
+                          disabled={marksDisabled}
+                        />
+                        <Select
+                          label="Status"
+                          value={selectedStudentStatus}
+                          onChange={(e) => setStatuses({ ...statuses, [selectedStudent.id]: e.target.value })}
+                          options={[
+                            { value: 'PENDING', label: 'Pending' },
+                            { value: 'ABSENT', label: 'Absent' },
+                            { value: 'EXEMPTED', label: 'Exempted' },
+                            { value: 'NOT_APPLICABLE', label: 'N/A' },
+                          ]}
+                        />
+                        {showDates && (
+                          <Input
+                            label="Date Override"
+                            type="date"
+                            value={individualDates[selectedStudent.id] || ''}
+                            onChange={(e) => setIndividualDates({ ...individualDates, [selectedStudent.id]: e.target.value })}
+                          />
+                        )}
+                      </div>
+                      <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
+                        <div className="text-sm text-gray-600">
+                          {selectedStudent.student?.fullName} — Roll {selectedStudent.enrollment?.rollNumber ?? '-'}
+                        </div>
+                        <Button onClick={handleSubmit} disabled={saving || invalidMarks || !selectedStudentId}>
+                          {saving ? 'Saving...' : 'Save Marks'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500">Select a student to enter marks.</p>
+                  )}
                 </>
               )}
             </Card>

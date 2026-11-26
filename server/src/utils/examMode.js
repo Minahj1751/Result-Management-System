@@ -3,8 +3,10 @@ const prisma = require('../config/database');
 /**
  * Exam modes per school class.
  *
- * STANDARD (Grade 4+): CT (20) + CW (10) + HW (10) = Class Marks (40)
- *   + Term Exam (60) = 100.
+ * STANDARD (Grade 4+): assessment-based class marks scale to 40
+ *   (CT 20 + CW 10 + HW 10) + Term Exam (60) = 100. Direct Term Exam
+ *   entry takes a single combined "Class Work" mark out of 40
+ *   (stored in classWorkMarks) plus Term Exam out of 60.
  * PRIMARY  (Grade 1-3): no term exam — CT (40) + CW (20) + HW (20)
  *   = Class Marks (80) + Attendance (20) = 100.
  *
@@ -41,6 +43,24 @@ const MARK_FIELDS_BY_MODE = {
   [EXAM_MODES.PRIMARY]: ['classTestMarks', 'classWorkMarks', 'homeWorkMarks', 'attendanceMarks'],
 };
 
+// Direct Term Exam entry max marks. Grade 4+ teachers enter one combined
+// "Class Work" mark out of 40 (kept in the classWorkMarks column) instead
+// of separate CT/CW/HW marks, plus Term Exam out of 60.
+const STANDARD_ENTRY_MAX_MARKS = {
+  classWorkMarks: 40,
+  termExamMarks: 60,
+};
+
+const ENTRY_MAX_MARKS_BY_MODE = {
+  [EXAM_MODES.STANDARD]: STANDARD_ENTRY_MAX_MARKS,
+  [EXAM_MODES.PRIMARY]: PRIMARY_MAX_MARKS,
+};
+
+const ENTRY_MARK_FIELDS_BY_MODE = {
+  [EXAM_MODES.STANDARD]: ['classWorkMarks', 'termExamMarks'],
+  [EXAM_MODES.PRIMARY]: MARK_FIELDS_BY_MODE[EXAM_MODES.PRIMARY],
+};
+
 /**
  * Extract the grade level from a class name like "Grade 3" / "Class 2".
  * Returns the integer level or null when the name has no grade/class number.
@@ -73,8 +93,8 @@ const getClassExamMode = async (schoolClassId) => {
   return {
     mode,
     className: schoolClass?.name || null,
-    maxMarks: MAX_MARKS_BY_MODE[mode],
-    markFields: MARK_FIELDS_BY_MODE[mode],
+    maxMarks: ENTRY_MAX_MARKS_BY_MODE[mode],
+    markFields: ENTRY_MARK_FIELDS_BY_MODE[mode],
   };
 };
 
@@ -84,6 +104,9 @@ module.exports = {
   PRIMARY_MAX_MARKS,
   MAX_MARKS_BY_MODE,
   MARK_FIELDS_BY_MODE,
+  STANDARD_ENTRY_MAX_MARKS,
+  ENTRY_MAX_MARKS_BY_MODE,
+  ENTRY_MARK_FIELDS_BY_MODE,
   gradeLevelFromClassName,
   isPrimaryClassName,
   examModeForClassName,

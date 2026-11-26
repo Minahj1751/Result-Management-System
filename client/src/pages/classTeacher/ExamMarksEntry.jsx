@@ -43,6 +43,7 @@ export default function ExamMarksEntry() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
+  const [selectedExamStudentId, setSelectedExamStudentId] = useState('');
   const [primarySubjects, setPrimarySubjects] = useState([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [primaryStudents, setPrimaryStudents] = useState([]);
@@ -51,6 +52,7 @@ export default function ExamMarksEntry() {
   const [primaryLoading, setPrimaryLoading] = useState(false);
   const [primarySaving, setPrimarySaving] = useState(false);
   const [primarySearch, setPrimarySearch] = useState('');
+  const [selectedPrimaryStudentId, setSelectedPrimaryStudentId] = useState('');
 
   const selectedAssignment = assignments.find((a) => a.id === selectedAssignmentId) || null;
   const isPrimary = isPrimaryClassName(selectedAssignment?.schoolClass?.name);
@@ -85,6 +87,7 @@ export default function ExamMarksEntry() {
       setLoading(true);
       setSelectedAssessment(null);
       setStudents([]);
+      setSelectedExamStudentId('');
       const data = await assessmentAPI.getAssessments({
         ...scopeParams(assignment, semesterId),
         limit: 200,
@@ -126,6 +129,7 @@ export default function ExamMarksEntry() {
     setExamAssessments([]);
     setSelectedAssessment(null);
     setStudents([]);
+    setSelectedExamStudentId('');
     try {
       const sems = await academicAPI.getSemesters(assignment.academicSessionId);
       const semesterList = filterVisibleSemesters(sems || []);
@@ -149,6 +153,7 @@ export default function ExamMarksEntry() {
     setSelectedSemesterId(semesterId);
     setPrimaryStudents([]);
     setPrimaryMarks({});
+    setSelectedPrimaryStudentId('');
     loadExamAssessments(selectedAssignment, semesterId);
     loadRemarks(selectedAssignment, semesterId);
   };
@@ -171,6 +176,10 @@ export default function ExamMarksEntry() {
       setMarks(initialMarks);
       setStatuses(initialStatuses);
       setStudentSearch('');
+      setSelectedExamStudentId((prev) => {
+        const ids = (data.students || []).map((s) => s.student.id);
+        return prev && ids.includes(prev) ? prev : (ids[0] || '');
+      });
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
     } finally {
@@ -179,15 +188,16 @@ export default function ExamMarksEntry() {
   };
 
   const handleSubmit = async () => {
+    if (!selectedExamStudentId || !selectedAssessment) return;
     try {
       setSaving(true);
-      const entries = students.map((student) => ({
-        studentId: student.student.id,
+      const entry = {
+        studentId: selectedExamStudentId,
         assessmentId: selectedAssessment.id,
-        marksObtained: marks[student.student.id] !== undefined && marks[student.student.id] !== '' ? marks[student.student.id] : null,
-        status: statuses[student.student.id] || 'PENDING',
-      }));
-      const result = await marksAPI.bulkUpsert(entries);
+        marksObtained: marks[selectedExamStudentId] !== undefined && marks[selectedExamStudentId] !== '' ? marks[selectedExamStudentId] : null,
+        status: statuses[selectedExamStudentId] || 'PENDING',
+      };
+      const result = await marksAPI.bulkUpsert([entry]);
       const errorMsg = result.errors?.length ? ` — ${result.errors.length} errors: ${result.errors[0].error}` : '';
       alert(`Saved: ${result.successCount} entries, ${result.errorCount} errors${errorMsg}`);
       loadStudentsForAssessment(selectedAssessment);
@@ -203,6 +213,7 @@ export default function ExamMarksEntry() {
     setSelectedSubjectId('');
     setPrimaryStudents([]);
     setPrimaryMarks({});
+    setSelectedPrimaryStudentId('');
     if (!assignment || !isPrimaryClassName(assignment.schoolClass?.name)) return;
     try {
       const mappings = await academicAPI.getClassSubjects(assignment.schoolClassId);
@@ -235,6 +246,10 @@ export default function ExamMarksEntry() {
       });
       setPrimaryMarks(initial);
       setPrimarySearch('');
+      setSelectedPrimaryStudentId((prev) => {
+        const ids = (data.students || []).map((s) => s.student.id);
+        return prev && ids.includes(prev) ? prev : (ids[0] || '');
+      });
     } catch (error) {
       alert(error.response?.data?.error || 'Error loading students');
     } finally {
@@ -255,14 +270,15 @@ export default function ExamMarksEntry() {
   };
 
   const savePrimaryMarks = async () => {
+    if (!selectedPrimaryStudentId || !selectedSubjectId) return;
     try {
       setPrimarySaving(true);
-      const entries = primaryStudents.map((s) => ({
-        studentId: s.student.id,
+      const entry = {
+        studentId: selectedPrimaryStudentId,
         classTestMarks: '', classWorkMarks: '', homeWorkMarks: '', termExamMarks: '', attendanceMarks: '',
-        ...(primaryMarks[s.student.id] || {}),
-      }));
-      const result = await termExamAPI.bulkUpsert({ ...scopeParams(), subjectId: selectedSubjectId, entries });
+        ...(primaryMarks[selectedPrimaryStudentId] || {}),
+      };
+      const result = await termExamAPI.bulkUpsert({ ...scopeParams(), subjectId: selectedSubjectId, entries: [entry] });
       const errorMsg = result.errors?.length ? ` — ${result.errors.length} errors: ${result.errors[0].error}` : '';
       alert(`Saved: ${result.successCount} entries, ${result.errorCount} errors${errorMsg}`);
       loadPrimaryMarks();
@@ -296,10 +312,20 @@ export default function ExamMarksEntry() {
         String(s.enrollment?.rollNumber ?? '').includes(q))
     : students;
 
-  const invalidMarks = students.some((s) => {
-    const v = marks[s.student?.id];
+  const examStudentOptions = visibleStudents.map((s) => ({
+    value: s.student.id,
+    label: `${s.student?.fullName || 'Student'} — Roll ${s.enrollment?.rollNumber ?? '-'} — ${s.student?.studentId || ''}`,
+  }));
+
+  const selectedExamStudent = students.find((s) => s.student?.id === selectedExamStudentId) || null;
+  const selectedExamStatus = statuses[selectedExamStudentId] || 'PENDING';
+  const examMarksDisabled = ['ABSENT', 'EXEMPTED'].includes(selectedExamStatus);
+
+  const invalidMarks = (() => {
+    if (!selectedExamStudentId) return false;
+    const v = marks[selectedExamStudentId];
     return v !== undefined && v !== '' && (!Number.isFinite(parseFloat(v)) || parseFloat(v) < 0 || parseFloat(v) > parseFloat(selectedAssessment?.maximumMarks || Infinity));
-  });
+  })();
 
   const pq = primarySearch.trim().toLowerCase();
   const visiblePrimaryStudents = pq
@@ -309,63 +335,24 @@ export default function ExamMarksEntry() {
         String(s.enrollment?.rollNumber ?? '').includes(pq))
     : primaryStudents;
 
-  const invalidPrimaryMarks = primaryStudents.some((s) => PRIMARY_FIELDS.some(({ key }) => {
-    const v = toNum(primaryMarks[s.student?.id]?.[key]);
-    return v !== null && (!Number.isFinite(v) || v < 0 || v > parseFloat(primaryMaxMarks[key] || Infinity));
+  const primaryStudentOptions = visiblePrimaryStudents.map((s) => ({
+    value: s.student.id,
+    label: `${s.student?.fullName || 'Student'} — Roll ${s.enrollment?.rollNumber ?? '-'} — ${s.student?.studentId || ''}`,
   }));
 
-  const primaryColumns = [
-    { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
-    { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
-    { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
-    ...PRIMARY_FIELDS.map(({ key, label }) => ({
-      key,
-      label: `${label} (${primaryMaxMarks[key] ?? '-'})`,
-      render: (val, row) => (
-        <Input type="number" step="0.01" min="0" max={primaryMaxMarks[key]}
-          value={primaryMarks[row.student?.id]?.[key] ?? ''}
-          onChange={(e) => setPrimaryMark(row.student.id, key, e.target.value)}
-          className="w-24" />
-      ),
-    })),
-    {
-      key: 'total', label: 'Total',
-      render: (val, row) => {
-        const anyFilled = PRIMARY_FIELDS.some(({ key }) => toNum(primaryMarks[row.student?.id]?.[key]) !== null);
-        return anyFilled ? primaryRowTotal(row.student.id) : '';
-      },
-    },
-  ];
+  const selectedPrimaryStudent = primaryStudents.find((s) => s.student?.id === selectedPrimaryStudentId) || null;
 
-  const markColumns = [
-    { key: 'studentId', label: 'Student ID', render: (val, row) => row.student?.studentId },
-    { key: 'fullName', label: 'Name', render: (val, row) => row.student?.fullName },
-    { key: 'rollNumber', label: 'Roll', render: (val, row) => row.enrollment?.rollNumber },
-    {
-      key: 'marks', label: 'Marks Obtained',
-      render: (val, row) => (
-        <Input type="number" step="0.01" min="0" max={selectedAssessment?.maximumMarks}
-          value={marks[row.student?.id] ?? ''}
-          onChange={(e) => setMarks({ ...marks, [row.student.id]: e.target.value })}
-          className="w-24"
-          disabled={['ABSENT', 'EXEMPTED'].includes(statuses[row.student?.id])} />
-      ),
-    },
-    {
-      key: 'status', label: 'Status',
-      render: (val, row) => (
-        <Select value={statuses[row.student?.id] || 'PENDING'}
-          onChange={(e) => setStatuses({ ...statuses, [row.student.id]: e.target.value })}
-          options={[
-            { value: 'PENDING', label: 'Pending' },
-            { value: 'ABSENT', label: 'Absent' },
-            { value: 'EXEMPTED', label: 'Exempted' },
-            { value: 'NOT_APPLICABLE', label: 'N/A' },
-          ]}
-          className="w-32" />
-      ),
-    },
-  ];
+  const invalidPrimaryMarks = (() => {
+    if (!selectedPrimaryStudentId) return false;
+    return PRIMARY_FIELDS.some(({ key }) => {
+      const v = toNum(primaryMarks[selectedPrimaryStudentId]?.[key]);
+      return v !== null && (!Number.isFinite(v) || v < 0 || v > parseFloat(primaryMaxMarks[key] || Infinity));
+    });
+  })();
+
+  const primaryAnyFilled = selectedPrimaryStudent
+    ? PRIMARY_FIELDS.some(({ key }) => toNum(primaryMarks[selectedPrimaryStudent.id]?.[key]) !== null)
+    : false;
 
   return (
     <div>
@@ -402,7 +389,7 @@ export default function ExamMarksEntry() {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Select label="Subject" value={selectedSubjectId}
-                  onChange={(e) => { setSelectedSubjectId(e.target.value); setPrimaryStudents([]); setPrimaryMarks({}); }}
+                  onChange={(e) => { setSelectedSubjectId(e.target.value); setPrimaryStudents([]); setPrimaryMarks({}); setSelectedPrimaryStudentId(''); }}
                   options={primarySubjects} />
                 <div className="flex items-end">
                   <Button onClick={loadPrimaryMarks} disabled={primaryLoading || !selectedSubjectId || !selectedSemesterId}>
@@ -420,20 +407,53 @@ export default function ExamMarksEntry() {
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <Input placeholder="Search by name, ID or roll..." value={primarySearch}
                       onChange={(e) => setPrimarySearch(e.target.value)} className="max-w-xs" />
-                    <span className="text-sm text-gray-600">Showing {visiblePrimaryStudents.length} of {primaryStudents.length} students</span>
+                    <span className="text-sm text-gray-600">{visiblePrimaryStudents.length} of {primaryStudents.length} students</span>
                     {invalidPrimaryMarks && (
                       <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
-                        Some marks exceed the maximum or are invalid
+                        Marks exceed the maximum or are invalid
                       </span>
                     )}
                   </div>
-                  <Table columns={primaryColumns} data={visiblePrimaryStudents} emptyMessage="No students match your search" />
-                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
-                    <div className="text-sm text-gray-600">{primaryStudents.length} students</div>
-                    <Button onClick={savePrimaryMarks} disabled={primarySaving || invalidPrimaryMarks}>
-                      {primarySaving ? 'Saving...' : 'Save All Marks'}
-                    </Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Select
+                      label="Select Student"
+                      value={selectedPrimaryStudentId}
+                      onChange={(e) => setSelectedPrimaryStudentId(e.target.value)}
+                      options={primaryStudentOptions}
+                      placeholder={primaryStudentOptions.length ? 'Choose a student' : 'No students match'}
+                    />
                   </div>
+                  {selectedPrimaryStudent ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {PRIMARY_FIELDS.map(({ key, label }) => (
+                          <Input
+                            key={key}
+                            label={`${label} (max ${primaryMaxMarks[key] ?? '-'})`}
+                            type="number" step="0.01" min="0" max={primaryMaxMarks[key]}
+                            value={primaryMarks[selectedPrimaryStudent.id]?.[key] ?? ''}
+                            onChange={(e) => setPrimaryMark(selectedPrimaryStudent.id, key, e.target.value)}
+                          />
+                        ))}
+                        <div>
+                          <span className="ui-field-label">Total</span>
+                          <div className="ui-input border-gray-300 bg-gray-50 text-gray-700">
+                            {primaryAnyFilled ? primaryRowTotal(selectedPrimaryStudent.id) : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
+                        <div className="text-sm text-gray-600">
+                          {selectedPrimaryStudent.student?.fullName} — Roll {selectedPrimaryStudent.enrollment?.rollNumber ?? '-'}
+                        </div>
+                        <Button onClick={savePrimaryMarks} disabled={primarySaving || invalidPrimaryMarks || !selectedPrimaryStudentId}>
+                          {primarySaving ? 'Saving...' : 'Save Marks'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500">Select a student to enter marks.</p>
+                  )}
                 </>
               )}
             </Card>
@@ -464,18 +484,56 @@ export default function ExamMarksEntry() {
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <Input placeholder="Search by name, ID or roll..." value={studentSearch}
                       onChange={(e) => setStudentSearch(e.target.value)} className="max-w-xs" />
-                    <span className="text-sm text-gray-600">Showing {visibleStudents.length} of {students.length} students</span>
+                    <span className="text-sm text-gray-600">{visibleStudents.length} of {students.length} students</span>
                     {invalidMarks && (
                       <span className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">
-                        Some marks exceed the maximum or are invalid
+                        Marks exceed the maximum or are invalid
                       </span>
                     )}
                   </div>
-                  <Table columns={markColumns} data={visibleStudents} emptyMessage="No students match your search" />
-                  <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
-                    <div className="text-sm text-gray-600">{students.length} students</div>
-                    <Button onClick={handleSubmit} disabled={saving || invalidMarks}>{saving ? 'Saving...' : 'Save All Marks'}</Button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Select
+                      label="Select Student"
+                      value={selectedExamStudentId}
+                      onChange={(e) => setSelectedExamStudentId(e.target.value)}
+                      options={examStudentOptions}
+                      placeholder={examStudentOptions.length ? 'Choose a student' : 'No students match'}
+                    />
                   </div>
+                  {selectedExamStudent ? (
+                    <>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Input
+                          label={`Marks Obtained (max ${selectedAssessment?.maximumMarks ?? '-'})`}
+                          type="number" step="0.01" min="0" max={selectedAssessment?.maximumMarks}
+                          value={marks[selectedExamStudent.id] ?? ''}
+                          onChange={(e) => setMarks({ ...marks, [selectedExamStudent.id]: e.target.value })}
+                          disabled={examMarksDisabled}
+                        />
+                        <Select
+                          label="Status"
+                          value={selectedExamStatus}
+                          onChange={(e) => setStatuses({ ...statuses, [selectedExamStudent.id]: e.target.value })}
+                          options={[
+                            { value: 'PENDING', label: 'Pending' },
+                            { value: 'ABSENT', label: 'Absent' },
+                            { value: 'EXEMPTED', label: 'Exempted' },
+                            { value: 'NOT_APPLICABLE', label: 'N/A' },
+                          ]}
+                        />
+                      </div>
+                      <div className="mt-4 flex flex-wrap justify-between items-center gap-2">
+                        <div className="text-sm text-gray-600">
+                          {selectedExamStudent.student?.fullName} — Roll {selectedExamStudent.enrollment?.rollNumber ?? '-'}
+                        </div>
+                        <Button onClick={handleSubmit} disabled={saving || invalidMarks || !selectedExamStudentId}>
+                          {saving ? 'Saving...' : 'Save Marks'}
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500">Select a student to enter marks.</p>
+                  )}
                 </>
               )}
             </Card>
